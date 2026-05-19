@@ -1,0 +1,243 @@
+{
+    "openapi": "3.0.0",
+    "info": {
+        "title": "ReplySys API",
+        "description": "API para Controle de Itens Reparados e Integração de Chamadas IA (Vapi)",
+        "version": "1.0.0"
+    },
+    "servers": [
+        {
+            "url": "/api",
+            "description": "API Server"
+        }
+    ],
+    "paths": {
+        "/ordens-servico": {
+            "get": {
+                "tags": [
+                    "Ordens de Servico"
+                ],
+                "summary": "Obter lista de Ordens de Serviço",
+                "operationId": "549e252027735cb8cf934c71fd929425",
+                "responses": {
+                    "200": {
+                        "description": "Successful operation"
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Ordens de Servico"
+                ],
+                "summary": "Cadastra nova Ordem de Serviço",
+                "operationId": "8d609483ce256a6a43e039d340590c43",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "descricao_item",
+                                    "nome",
+                                    "telefone"
+                                ],
+                                "properties": {
+                                    "descricao_item": {
+                                        "type": "string"
+                                    },
+                                    "defeito_relatado": {
+                                        "type": "string"
+                                    },
+                                    "modelo": {
+                                        "type": "string"
+                                    },
+                                    "data_pronto": {
+                                        "type": "string",
+                                        "format": "date"
+                                    },
+                                    "nome": {
+                                        "type": "string"
+                                    },
+                                    "telefone": {
+                                        "type": "string"
+                                    },
+                                    "valor": {
+                                        "type": "number",
+                                        "format": "float"
+                                    },
+                                    "status_pagamento": {
+                                        "type": "string",
+                                        "enum": [
+                                            "total",
+                                            "parcial",
+                                            "pendente"
+                                        ]
+                                    },
+                                    "valor_pago": {
+                                        "type": "number",
+                                        "format": "float"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "OS Criada"
+                    }
+                }
+            }
+        },
+        "/ordens-servico/{id}/status": {
+            "put": {
+                "tags": [
+                    "Ordens de Servico"
+                ],
+                "summary": "Atualiza o status da OS",
+                "description": "Usado pelo App genérico para modificar o status. Dispara a ligação IA se for REPARADO.",
+                "operationId": "0909feeada4bb2c7289b6e43bafaf376",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "status"
+                                ],
+                                "properties": {
+                                    "status": {
+                                        "type": "string",
+                                        "enum": [
+                                            "RECEBIDO",
+                                            "EM_REPARO",
+                                            "AGUARDANDO_PECA",
+                                            "REPARADO",
+                                            "ENTREGUE"
+                                        ]
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Status atualizado"
+                    }
+                }
+            }
+        },
+        "/ordens-servico/{id}": {
+            "put": {
+                "tags": [
+                    "Ordens de Servico"
+                ],
+                "summary": "Atualiza uma Ordem de Serviço existente",
+                "operationId": "7d6deef7f4a8f1eeb173f93b80f13c93",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "nome"
+                                ],
+                                "properties": {
+                                    "descricao_item": {
+                                        "type": "string"
+                                    },
+                                    "defeito_relatado": {
+                                        "type": "string"
+                                    },
+                                    "modelo": {
+                                        "type": "string"
+                                    },
+                                    "data_pronto": {
+                                        "type": "string",
+                                        "format": "date"
+                                    },
+                                    "nome": {
+                                        "type": "string"
+                                    },
+                                    "telefone": {
+                                        "type": "string"
+                                    },
+                                    "valor": {
+                                        "type": "number",
+                                        "format": "float"
+                                    },
+                                    "status_pagamento": {
+                                        "type": "string",
+                                        "enum": [
+                                            "total",
+                                            "parcial",
+                                            "pendente"
+                                        ]
+                                    },
+                                    "valor_pago": {
+                                        "type": "number",
+                                        "format": "float"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OS atualizada com sucesso"
+                    }
+                }
+            }
+        },
+        "/webhook/vapi": {
+            "post": {
+                "tags": [
+                    "Webhook"
+                ],
+                "summary": "Recebe atualizações de chamada da Vapi",
+                "description": "Webhook chamado pela IA da Vapi para informar o resultado da ligação.",
+                "operationId": "64b0b0e895645308cf43425fa02e5fc4",
+                "responses": {
+                    "200": {
+                        "description": "Processado com sucesso"
+                    }
+                }
+            }
+        }
+    },
+    "tags": [
+        {
+            "name": "Ordens de Servico",
+            "description": "Ordens de Servico"
+        },
+        {
+            "name": "Webhook",
+            "description": "Webhook"
+        }
+    ]
+}
