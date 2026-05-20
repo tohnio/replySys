@@ -89,6 +89,27 @@ fun HomeScreen(
     }
 }
 
+fun formatDateStr(dateStr: String?, patternInput: String = "yyyy-MM-dd"): String {
+    if (dateStr.isNullOrEmpty()) return "--/--/----"
+    return try {
+        val sdfInput = if (dateStr.contains("T")) {
+            java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+        } else if (dateStr.contains(" ")) {
+            java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
+        } else {
+            java.text.SimpleDateFormat(patternInput, java.util.Locale.US)
+        }
+        val date = sdfInput.parse(dateStr)
+        if (date != null) {
+            java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale("pt", "BR")).format(date)
+        } else {
+            dateStr
+        }
+    } catch (e: Exception) {
+        dateStr
+    }
+}
+
 @Composable
 fun OsItemCard(
     os: OrdemServico,
@@ -101,6 +122,10 @@ fun OsItemCard(
             Text(text = "Modelo: ${os.modelo ?: os.descricao_item ?: ""}")
             Text(text = "Status: ${os.status}", color = MaterialTheme.colorScheme.primary)
             
+            val entradaFormatted = formatDateStr(os.data_entrada)
+            val previsaoFormatted = formatDateStr(os.data_pronto)
+            Text(text = "Entrada: $entradaFormatted / Previsão: $previsaoFormatted", style = MaterialTheme.typography.bodyMedium)
+
             val valorFormatado = String.format(java.util.Locale("pt", "BR"), "%.2f", os.valor_orcamento)
             val paymentText = when (os.status_pagamento) {
                 "total" -> "R$ $valorFormatado PAGO"

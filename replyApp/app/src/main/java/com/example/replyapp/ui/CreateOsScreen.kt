@@ -30,32 +30,69 @@ fun formatPhone(digits: String): String {
     }
 }
 
-fun calculateDateFromDayOfWeek(selection: String): String {
-    val calendar = java.util.Calendar.getInstance()
-    val todayDayOfWeek = calendar.get(java.util.Calendar.DAY_OF_WEEK)
+fun generatePrevisaoOptions(initialDate: String? = null): List<Pair<String, String>> {
+    val options = mutableListOf<Pair<String, String>>()
+    val current = java.util.Calendar.getInstance()
     
-    val targetDayOfWeek = when (selection) {
-        "Domingo" -> java.util.Calendar.SUNDAY
-        "Segunda-feira" -> java.util.Calendar.MONDAY
-        "Terça-feira" -> java.util.Calendar.TUESDAY
-        "Quarta-feira" -> java.util.Calendar.WEDNESDAY
-        "Quinta-feira" -> java.util.Calendar.THURSDAY
-        "Sexta-feira" -> java.util.Calendar.FRIDAY
-        "Sábado" -> java.util.Calendar.SATURDAY
-        else -> -1
+    val limit = java.util.Calendar.getInstance()
+    while (limit.get(java.util.Calendar.DAY_OF_WEEK) != java.util.Calendar.MONDAY) {
+        limit.add(java.util.Calendar.DAY_OF_YEAR, -1)
     }
+    limit.add(java.util.Calendar.DAY_OF_YEAR, 11) // Friday of next week (Monday + 11 days)
     
-    if (targetDayOfWeek == -1) {
-        calendar.add(java.util.Calendar.DAY_OF_YEAR, 7)
-    } else {
-        var daysDiff = targetDayOfWeek - todayDayOfWeek
-        if (daysDiff <= 0) {
-            daysDiff += 7
+    val sdfDate = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+    val todayDateStr = sdfDate.format(current.time)
+    
+    val seenCounts = mutableMapOf<Int, Int>()
+    var iterations = 0
+    
+    while (!current.after(limit) && iterations < 30) {
+        iterations++
+        val dayOfWeek = current.get(java.util.Calendar.DAY_OF_WEEK)
+        
+        if (dayOfWeek != java.util.Calendar.SATURDAY && dayOfWeek != java.util.Calendar.SUNDAY) {
+            val dateStr = sdfDate.format(current.time)
+            val isToday = dateStr == todayDateStr
+            
+            val currentCount = (seenCounts[dayOfWeek] ?: 0) + 1
+            seenCounts[dayOfWeek] = currentCount
+            
+            val label = if (isToday) {
+                "Hoje"
+            } else {
+                val dayName = when (dayOfWeek) {
+                    java.util.Calendar.MONDAY -> "Segunda-feira"
+                    java.util.Calendar.TUESDAY -> "Terça-feira"
+                    java.util.Calendar.WEDNESDAY -> "Quarta-feira"
+                    java.util.Calendar.THURSDAY -> "Quinta-feira"
+                    java.util.Calendar.FRIDAY -> "Sexta-feira"
+                    else -> ""
+                }
+                
+                if (currentCount > 1) {
+                    "$dayName (Semana seguinte)"
+                } else {
+                    dayName
+                }
+            }
+            options.add(Pair(label, dateStr))
         }
-        calendar.add(java.util.Calendar.DAY_OF_YEAR, daysDiff)
+        current.add(java.util.Calendar.DAY_OF_YEAR, 1)
     }
     
-    return java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(calendar.time)
+    if (initialDate != null && options.none { it.second == initialDate }) {
+        try {
+            val date = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).parse(initialDate)
+            if (date != null) {
+                val formattedLabel = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale("pt", "BR")).format(date)
+                options.add(0, Pair(formattedLabel, initialDate))
+            }
+        } catch (e: Exception) {
+            options.add(0, Pair(initialDate, initialDate))
+        }
+    }
+    
+    return options
 }
 
 class CreateOsViewModel : ViewModel() {
@@ -116,43 +153,32 @@ fun CreateOsScreen(
         }
     } ?: today
 
-    val initialPrevisao = osToEdit?.data_pronto?.let { dateStr ->
-        try {
-            val date = SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(dateStr)
-            if (date != null) {
-                val calendar = java.util.Calendar.getInstance()
-                calendar.time = date
-                val dayOfWeekNum = calendar.get(java.util.Calendar.DAY_OF_WEEK)
-                when (dayOfWeekNum) {
-                    java.util.Calendar.SUNDAY -> "Domingo"
-                    java.util.Calendar.MONDAY -> "Segunda-feira"
-                    java.util.Calendar.TUESDAY -> "Terça-feira"
-                    java.util.Calendar.WEDNESDAY -> "Quarta-feira"
-                    java.util.Calendar.THURSDAY -> "Quinta-feira"
-                    java.util.Calendar.FRIDAY -> "Sexta-feira"
-                    java.util.Calendar.SATURDAY -> "Sábado"
-                    else -> "Segunda-feira"
-                }
+    val previsaoOptions = remember(osToEdit) { generatePrevisaoOptions(osToEdit?.data_pronto) }
+    val initialPrevisaoLabel = remember(osToEdit, previsaoOptions) {
+        val dateStr = osToEdit?.data_pronto
+        if (dateStr != null) {
+            val matchingOption = previsaoOptions.find { it.second == dateStr }
+            if (matchingOption != null) {
+                matchingOption.first
             } else {
-                "Segunda-feira"
+                try {
+                    val date = SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(dateStr)
+                    if (date != null) {
+                        SimpleDateFormat("dd/MM/yyyy", Locale("pt", "BR")).format(date)
+                    } else {
+                        dateStr
+                    }
+                } catch (e: Exception) {
+                    dateStr
+                }
             }
-        } catch (e: Exception) {
-            "Segunda-feira"
+        } else {
+            previsaoOptions.firstOrNull()?.first ?: "Segunda-feira"
         }
-    } ?: "Segunda-feira"
+    }
 
-    var previsaoEntrega by remember { mutableStateOf(initialPrevisao) }
+    var previsaoEntrega by remember { mutableStateOf(initialPrevisaoLabel) }
     var expandedPrevisao by remember { mutableStateOf(false) }
-    val daysOfWeek = listOf(
-        "Segunda-feira",
-        "Terça-feira",
-        "Quarta-feira",
-        "Quinta-feira",
-        "Sexta-feira",
-        "Sábado",
-        "Domingo",
-        "Próxima semana"
-    )
 
     var valor by remember { mutableStateOf(if (osToEdit != null) String.format(Locale.US, "%.2f", osToEdit.valor_orcamento).replace('.', ',') else "") }
     var statusPagamento by remember { mutableStateOf(osToEdit?.status_pagamento ?: "pendente") }
@@ -200,11 +226,11 @@ fun CreateOsScreen(
                     expanded = expandedPrevisao,
                     onDismissRequest = { expandedPrevisao = false }
                 ) {
-                    daysOfWeek.forEach { selectionOption ->
+                    previsaoOptions.forEach { option ->
                         DropdownMenuItem(
-                            text = { Text(selectionOption) },
+                            text = { Text(option.first) },
                             onClick = {
-                                previsaoEntrega = selectionOption
+                                previsaoEntrega = option.first
                                 expandedPrevisao = false
                             }
                         )
@@ -270,7 +296,17 @@ fun CreateOsScreen(
                 }
                 Button(
                     onClick = {
-                        val parsedDate = calculateDateFromDayOfWeek(previsaoEntrega)
+                        val selectedOption = previsaoOptions.find { it.first == previsaoEntrega }
+                        val parsedDate = if (selectedOption != null) {
+                            selectedOption.second
+                        } else {
+                            try {
+                                val date = SimpleDateFormat("dd/MM/yyyy", Locale("pt", "BR")).parse(previsaoEntrega)
+                                if (date != null) SimpleDateFormat("yyyy-MM-dd", Locale.US).format(date) else previsaoEntrega
+                            } catch (e: Exception) {
+                                previsaoEntrega
+                            }
+                        }
                         val doubleValor = valor.replace(',', '.').toDoubleOrNull() ?: 0.0
                         val doubleValorPago = if (statusPagamento == "total") doubleValor else (valorPago.replace(',', '.').toDoubleOrNull() ?: 0.0)
 

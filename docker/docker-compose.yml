@@ -61,6 +61,16 @@ services:
     networks:
       - replysys-network
 
+  phpmyadmin-stopper:
+    image: docker:cli
+    container_name: ${PROJECT_NAME}_phpmyadmin_stopper
+    restart: "no"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: sh -c "sleep 3600 && docker stop ${PROJECT_NAME}_phpmyadmin"
+    depends_on:
+      - phpmyadmin
+
   redis:
     image: redis:alpine
     container_name: ${PROJECT_NAME}_redis
