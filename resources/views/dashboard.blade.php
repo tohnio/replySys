@@ -92,7 +92,7 @@
                 <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
                     <svg class="w-16 h-16 text-blue-400" fill="currentColor" viewBox="0 0 20 20"><path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z"></path></svg>
                 </div>
-                <h3 class="text-slate-400 text-sm font-medium mb-1">Ligações IA Atendidas</h3>
+                <h3 class="text-slate-400 text-sm font-medium mb-1">Ligações Atendidas</h3>
                 <p class="text-4xl font-bold text-white">{{ $ligacoesAtendidas }}</p>
                 <div class="mt-4 flex items-center text-sm">
                     <span class="text-blue-400 font-medium">{{ $ligacoesPendentes }} na fila</span>
@@ -249,7 +249,7 @@
             <div class="glass-panel rounded-2xl shadow-lg flex flex-col h-full">
                 <div class="p-6 border-b border-white/10 flex justify-between items-center">
                     <h3 class="text-lg font-bold text-white flex items-center gap-2">
-                        Atividade da IA Vapi 
+                        Atividade n8n / NVoIP 
                         <span class="flex h-3 w-3 relative ml-2">
                           <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
                           <span class="relative inline-flex rounded-full h-3 w-3 bg-indigo-500"></span>
@@ -291,7 +291,7 @@
                     @else
                         <div class="h-full flex flex-col items-center justify-center text-slate-500 py-10">
                             <svg class="w-12 h-12 mb-3 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
-                            <p>Nenhuma ligação registrada pela IA ainda.</p>
+                            <p>Nenhuma ligação registrada ainda.</p>
                         </div>
                     @endif
                 </div>

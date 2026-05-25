@@ -13,4 +13,4 @@ Route::get('/ordens-servico', [OsController::class, 'index']);
 Route::post('/ordens-servico', [OsController::class, 'store']);
 Route::put('/ordens-servico/{id}', [OsController::class, 'update']);
 Route::put('/ordens-servico/{id}/status', [OsController::class, 'updateStatus']);
-Route::post('/webhook/vapi', [WebhookController::class, 'handleVapiWebhook']);
+Route::post('/webhook/n8n', [WebhookController::class, 'handleN8nWebhook']);

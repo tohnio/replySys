@@ -1,6 +1,6 @@
 # Sistema de Controle de Reparos (ReplySys)
 
-Sistema integrado que permite o gerenciamento de ordens de serviço, controle financeiro de receitas e despesas, e automação de ligações telefônicas via Inteligência Artificial para notificação de clientes sobre o status de seus aparelhos.
+Sistema integrado que permite o gerenciamento de ordens de serviço, controle financeiro de receitas e despesas, e automação de ligações telefônicas via n8n e NVoIP para notificação de clientes sobre o status de seus aparelhos.
 
 O ecossistema é composto por um backend em Laravel (com painel administrativo web) e um aplicativo móvel Android para uso dos técnicos/atendentes.
 
@@ -15,8 +15,8 @@ O ecossistema é composto por um backend em Laravel (com painel administrativo w
   - [Cliente](file:///d:/Docker/lab/replySys/app/Models/Cliente.php): Representa os clientes, com relacionamentos de um para muitos com as ordens de serviço.
   - [OrdemServico](file:///d:/Docker/lab/replySys/app/Models/OrdemServico.php): Controla os aparelhos, status, valores e datas.
   - [Despesa](file:///d:/Docker/lab/replySys/app/Models/Despesa.php): Gerencia o controle financeiro de saídas de caixa.
-  - [HistoricoLigacao](file:///d:/Docker/lab/replySys/app/Models/HistoricoLigacao.php): Registra logs de chamadas e transcrições geradas pela IA.
-- **Integração Externa:** API da Vapi (Automação de chamadas de voz com IA)
+  - [HistoricoLigacao](file:///d:/Docker/lab/replySys/app/Models/HistoricoLigacao.php): Registra logs de chamadas, identificador de chamada externo do n8n (`external_call_id`), transcrições/notas geradas e status de retentativas.
+- **Integração Externa:** Webhook com a plataforma de automação **n8n**, que dispara fluxos inteligentes e efetua chamadas telefônicas por meio da API de torpedo de voz da **NVoIP**.
 - **Documentação de API:** Swagger/OpenAPI (L5-Swagger) configurado no controlador de APIs [OsController](file:///d:/Docker/lab/replySys/app/Http/Controllers/Api/OsController.php) e no [WebhookController](file:///d:/Docker/lab/replySys/app/Http/Controllers/WebhookController.php) utilizando atributos PHP (`OpenApi\Attributes`).
 - **Comunicação em Fila:** Laravel Jobs & Queues (para processamento assíncrono de chamadas e retentativas) via [CallCustomerJob](file:///d:/Docker/lab/replySys/app/Jobs/CallCustomerJob.php).
 
@@ -51,17 +51,18 @@ Exposta para consumo direto pelo App Android e por serviços de Webhook:
 - `POST /api/ordens-servico`: Cria uma nova Ordem de Serviço. Se o telefone informado já pertencer a um cliente existente, associa a OS a ele; caso contrário, cria um novo registro de cliente. Suporta inserção de valores de orçamento e sinal de pagamento.
 - `PUT /api/ordens-servico/{id}`: Atualiza os dados de uma OS e do respectivo cliente (nome, telefone, modelo, defeito, valor, status de pagamento).
 - `PUT /api/ordens-servico/{id}/status`: Altera o status da OS.
-  - Ao definir o status como **`REPARADO`**, a data de reparo é gravada e o job assíncrono [CallCustomerJob](file:///d:/Docker/lab/replySys/app/Jobs/CallCustomerJob.php) é disparado para efetuar a ligação telefônica de aviso ao cliente.
+  - Ao definir o status como **`REPARADO`**, a data de reparo é gravada e o job assíncrono [CallCustomerJob](file:///d:/Docker/lab/replySys/app/Jobs/CallCustomerJob.php) é disparado para disparar o webhook do n8n que fará a ligação ao cliente.
   - Ao definir o status como **`ENTREGUE`**, a data de entrega é registrada, consolidando o fluxo financeiro do restante do pagamento.
 
-### 3. Automação de Ligações e Webhook IA (Vapi)
-- **Serviço de Chamada ([VapiService](file:///d:/Docker/lab/replySys/app/Services/VapiService.php)):**
-  - Prepara a requisição para a API da **Vapi.ai**, enviando o ID do assistente, telefone do cliente e variáveis customizadas (`nome_cliente` e `item_reparado`).
-  - Atualmente simula a chamada no ambiente local criando um histórico de ligação ([HistoricoLigacao](file:///d:/Docker/lab/replySys/app/Models/HistoricoLigacao.php)) com status `pendente`.
+### 3. Automação de Ligações e Webhook (n8n & NVoIP)
+- **Instância Local n8n via Docker:** O ecossistema inclui um container n8n configurado em `docker-compose.yml` que roda na porta configurada (padrão `9082`). A persistência dos fluxos de trabalho e credenciais de integração é gerenciada de forma segura através do volume Docker `n8n_data`.
+- **Serviço de Chamada ([N8nService](file:///d:/Docker/lab/replySys/app/Services/N8nService.php)):**
+  - Conecta com o webhook configurado no **n8n** (`N8N_WEBHOOK_URL`), enviando os dados da OS, detalhes do cliente, telefone formatado em padrão internacional E.164 (`+55...`), e um UUID único (`external_call_id`).
+  - Registra a tentativa no histórico com status inicial `pendente`.
 - **Processamento de Webhooks ([WebhookController](file:///d:/Docker/lab/replySys/app/Http/Controllers/WebhookController.php)):**
-  - Recebe o status final e a duração da ligação diretamente do webhook da Vapi.
-  - Salva a **transcrição gerada pela IA** no banco de dados e atualiza o status para `atendida` ou `caixa_postal`.
-  - **Lógica de Caixa Postal:** Caso a ligação caia na caixa postal ou não seja completada, o sistema agenda automaticamente uma nova chamada para o dia seguinte, alternando de forma aleatória o horário (10h ou 19h) através de um delay no job [CallCustomerJob](file:///d:/Docker/lab/replySys/app/Jobs/CallCustomerJob.php).
+  - Recebe as atualizações da chamada a partir do webhook de retorno do n8n (`POST /api/webhook/n8n`).
+  - Atualiza o registro pendente correspondente no histórico para `'atendida'` ou `'caixa_postal'`, salvando a duração e qualquer transcrição/nota opcional de conversa gerada no fluxo do n8n.
+  - **Lógica de Retentativas e Caixa Postal:** Se a ligação falhar, cair na caixa postal ou não for completada, o sistema agenda automaticamente uma nova chamada para 1 hora de atraso, limitada à janela comercial das **09h às 18h** (chamadas calculadas para depois das 18h são agendadas para as 09h do dia seguinte), com limite máximo de **4 tentativas de chamada** (1 inicial + 3 retentativas) por Ordem de Serviço.
 
 ### 4. Aplicativo Android (`replyApp`)
 - **Tela Inicial ([HomeScreen.kt](file:///d:/Docker/lab/replySys/replyApp/app/src/main/java/com/example/replyapp/ui/HomeScreen.kt)):**
@@ -87,7 +88,8 @@ sequenceDiagram
     participant API as Laravel API (Endpoints)
     participant DB as Banco de Dados
     participant Job as Fila (Queue/Job)
-    participant Vapi as Vapi API (IA Voice)
+    participant n8n as n8n Workflow
+    participant NVoIP as NVoIP API
     
     App->>API: POST /api/ordens-servico (Cria OS com status RECEBIDO)
     API->>DB: Salva Cliente e Ordem de Serviço
@@ -99,18 +101,19 @@ sequenceDiagram
     API->>Job: Dispara CallCustomerJob
     API-->>App: Retorna Sucesso (Atualiza UI no App)
     
-    Job->>Vapi: VapiService->makeCall() (Inicia Ligação com IA)
-    Vapi-->>Job: Chamada Iniciada
-    Job->>DB: Cria Histórico de Ligação (status: pendente)
+    Job->>n8n: N8nService->makeCall() (Dispara Webhook n8n)
+    Job->>DB: Cria Histórico de Ligação (status: pendente, external_call_id: UUID)
     
-    Note over Vapi: IA conversa com o cliente:<br/>"Olá [Nome], seu [Aparelho] está pronto!"
+    n8n->>NVoIP: POST /v2/torpedo/voice (TTS Call)
+    Note over NVoIP: IA / Torpedo fala com o cliente:<br/>"Olá [Nome], seu [Aparelho] está pronto!"
     
-    Vapi->>API: POST /api/webhook/vapi (Retorno da chamada)
+    NVoIP-->>n8n: Callback / Resultado da Chamada
+    n8n->>API: POST /api/webhook/n8n (Retorno da chamada)
     alt Chamada Atendida
-        API->>DB: Atualiza histórico para 'atendida' + insere Transcrição da conversa
-    else Caixa Postal / Falhou
-        API->>DB: Atualiza histórico para 'caixa_postal'
-        API->>Job: Reagenda CallCustomerJob com Delay para o dia seguinte (10h ou 19h)
+        API->>DB: Atualiza histórico para 'atendida' + insere Transcrição/Notas se houver
+    else Caixa Postal / Falhou (Tentativas < 4)
+        API->>DB: Atualiza histórico para 'caixa_postal' + proxima_tentativa
+        API->>Job: Reagenda CallCustomerJob com delay de 1 hora (Janela 09h - 18h)
     end
     
     Note over App, API: Cliente comparece à loja...

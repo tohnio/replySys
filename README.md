@@ -1,58 +1,159 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Sistema de Controle de Reparos (ReplySys)
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+O **ReplySys** é um ecossistema integrado para gerenciamento de ordens de serviço (OS), controle financeiro de fluxo de caixa (entradas e despesas) e automação inteligente de ligações telefônicas para notificação de clientes sobre o status de seus aparelhos.
 
-## About Laravel
+O projeto é composto por:
+1. **Backend & Painel Administrativo Web:** Desenvolvido em Laravel 11.
+2. **Aplicativo Mobile:** Desenvolvido em Android (Kotlin + Jetpack Compose) para os técnicos.
+3. **Automação Externa:** Fluxo no **n8n** integrado com torpedo de voz da **NVoIP** para ligações automatizadas.
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+---
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## 🛠️ Tecnologias e Arquitetura
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+### Backend & Painel Web (Laravel)
+- **Framework:** Laravel 11.x
+- **Banco de Dados:** MySQL/PostgreSQL (Relacional)
+- **Fila de Processamento:** Laravel Queues (utilizando driver de banco de dados por padrão) para processamento assíncrono de notificações de clientes.
+- **Documentação de API:** L5-Swagger (OpenAPI) configurado e acessível no endpoint `/api/documentation`.
+- **Automação:** Disparo de webhooks direcionados para o n8n no status `REPARADO`.
 
-## Learning Laravel
+### Mobile (Android App - `replyApp`)
+- **Linguagem:** Kotlin
+- **Interface Gráfica:** Jetpack Compose (Modern UI reativa e fluida)
+- **Integração HTTP:** Retrofit + Gson para consumo da API Laravel do backend.
+- **Arquitetura:** MVVM (ViewModel, LiveData/StateFlow, Coroutines).
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+### Integração n8n & NVoIP
+- Ao concluir um reparo (status `REPARADO`), o Laravel agenda um job assíncrono que aciona um webhook no **n8n**.
+- O **n8n** atua como o orquestrador inteligente, validando as informações e realizando a chamada de torpedo de voz (TTS) através da API da **NVoIP**.
+- A resposta da chamada é enviada pelo n8n de volta ao webhook do Laravel (`POST /api/webhook/n8n`), que registra o histórico, duração, transcrição e agenda retentativas inteligentes (limite de 5 tentativas) caso caia em caixa postal.
 
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+---
 
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
+## 📦 Estrutura do Repositório
 
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
-
-```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+```
+├── app/                  # Código fonte do Laravel (Models, Controllers, Services, Jobs)
+├── config/               # Arquivos de configuração do Laravel
+├── database/             # Migrações e seeders de banco de dados
+├── docker/               # Configuração do ambiente em containers Docker (Nginx, PHP)
+├── public/               # Assets públicos do Laravel
+├── replyApp/             # Código-fonte do aplicativo Android (Kotlin)
+├── resources/            # Views (Blade templates) e assets front-end
+├── routes/               # Definição de rotas web e da API
+├── tests/                # Testes automatizados (Feature & Unit)
+├── dp-replysys.sh        # Script automatizado de deploy via rsync + SSH
+└── gemini.md             # Guia de desenvolvimento do projeto
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+---
 
-## Contributing
+## 🚀 Como Executar o Projeto Localmente
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+### Requisitos Mínimos
+- PHP 8.2 ou superior
+- Composer
+- MySQL 8.x ou PostgreSQL
+- Node.js & NPM
+- Docker & Docker Compose (opcional)
 
-## Code of Conduct
+### Passo a Passo
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+1. **Clonar o repositório** e entrar na pasta do projeto:
+   ```bash
+   git clone <URL_DO_REPOSITORIO>
+   cd replySys
+   ```
 
-## Security Vulnerabilities
+2. **Instalar as dependências do PHP:**
+   ```bash
+   composer install
+   ```
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+3. **Instalar as dependências de Front-end:**
+   ```bash
+   npm install && npm run build
+   ```
 
-## License
+4. **Configurar o Ambiente (.env):**
+   Copie o arquivo de exemplo e defina suas chaves de banco de dados e credenciais:
+   ```bash
+   cp .env.example .env
+   ```
+   Adicione a URL do webhook do seu fluxo no n8n:
+   ```env
+   N8N_WEBHOOK_URL=https://n8n.seudominio.com/webhook/identificador-do-fluxo
+   ```
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+5. **Gerar a chave do Laravel:**
+   ```bash
+   php artisan key:generate
+   ```
+
+6. **Executar as Migrações do Banco:**
+   ```bash
+   php artisan migrate
+   ```
+
+7. **Iniciar o Servidor Local:**
+   ```bash
+   php artisan serve
+   ```
+   O painel web estará disponível em `http://localhost:8000`.
+
+8. **Executar o Processador de Filas (Queue Worker):**
+   Como as ligações são processadas em segundo plano, inicie o queue worker:
+   ```bash
+   php artisan queue:work
+   ```
+
+---
+
+## 🐋 Rodando com Docker
+
+O projeto possui um ambiente pré-configurado com Docker Compose localizado no diretório `/docker` que inicia o Laravel, MySQL, Redis, phpMyAdmin e uma instância local do **n8n**.
+
+1. Acesse a pasta docker:
+   ```bash
+   cd docker
+   ```
+2. Configure o arquivo `.env` interno na pasta `/docker` (definindo a porta `N8N_PORT=9082`).
+3. Inicie os containers:
+   ```bash
+   docker compose up -d
+   ```
+
+- **n8n UI:** disponível em `http://localhost:9082`.
+- **phpMyAdmin:** disponível em `http://localhost:9081`.
+- **Laravel Web Application:** disponível em `http://localhost:9080`.
+
+---
+
+## 🧪 Executando os Testes Automatizados
+
+O sistema conta com um conjunto completo de testes de integração cobrindo fluxos de ordens de serviço, fluxo de caixa e o processamento de ligações via webhook do n8n.
+
+Para rodar os testes:
+```bash
+php artisan test
+```
+
+---
+
+## 🚢 Deploy Automatizado
+
+O script [dp-replysys.sh](file:///d:/Docker/lab/replySys/dp-replysys.sh) automatiza o deploy rsync e a execução de comandos remotos via SSH.
+
+```bash
+# Permissão de execução no script
+chmod +x dp-replysys.sh
+
+# Execução do deploy
+./dp-replysys.sh
+```
+O script se encarrega de:
+- Sincronizar os arquivos excluindo pastas de dependências locais (`vendor`, `node_modules`).
+- Executar migrações do banco remotamente.
+- Recriar caches de rotas e configurações.
+- Reiniciar o serviço de fila no servidor remoto.

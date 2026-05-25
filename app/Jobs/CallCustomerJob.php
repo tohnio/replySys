@@ -25,8 +25,8 @@ class CallCustomerJob implements ShouldQueue
     /**
      * Execute the job.
      */
-    public function handle(\App\Services\VapiService $vapiService): void
+    public function handle(\App\Services\N8nService $n8nService): void
     {
-        $vapiService->makeCall($this->os);
+        $n8nService->makeCall($this->os);
     }
 }

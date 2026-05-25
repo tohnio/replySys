@@ -214,7 +214,7 @@ class OsTest extends TestCase
         $this->assertEquals('', $cliente->telefone);
     }
 
-    public function test_update_status_to_reparado_dispatches_vapi_job(): void
+    public function test_update_status_to_reparado_dispatches_call_job(): void
     {
         \Illuminate\Support\Facades\Queue::fake();
 
