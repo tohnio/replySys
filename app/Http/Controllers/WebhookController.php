@@ -27,28 +27,36 @@ class WebhookController extends Controller
         $externalCallId = $payload['external_call_id'] ?? null;
         $osId = $payload['ordem_servico_id'] ?? null;
         
-        if (!$osId) {
-            return response()->json(['status' => 'ignored', 'message' => 'OrdemServico ID missing']);
+        $historico = null;
+        $os = null;
+
+        if ($externalCallId) {
+            $historico = \App\Models\HistoricoLigacao::where('external_call_id', $externalCallId)->first();
+            if ($historico) {
+                $os = $historico->ordemServico;
+            }
         }
 
-        $os = OrdemServico::find($osId);
+        if (!$os && $osId) {
+            $os = OrdemServico::find($osId);
+        }
+
         if (!$os) {
-            return response()->json(['status' => 'error', 'message' => 'OrdemServico not found'], 404);
+            return response()->json(['status' => 'error', 'message' => 'OrdemServico not found or OrdemServico ID missing'], 404);
         }
 
         $status_ligacao = $payload['status_ligacao'] ?? 'falhou';
         $duracao = $payload['duracao'] ?? 0;
         $transcricao_ia = $payload['transcricao_ia'] ?? null;
 
-        $historico = null;
-
-        if ($externalCallId) {
-            $historico = $os->historicoLigacoes()->where('external_call_id', $externalCallId)->first();
-        }
-
-        if (!$historico) {
-            // Tenta encontrar a última tentativa "pendente" para atualizar (fallback)
-            $historico = $os->historicoLigacoes()->where('status_ligacao', 'pendente')->latest()->first();
+        if (!$historico && $os) {
+            if ($externalCallId) {
+                $historico = $os->historicoLigacoes()->where('external_call_id', $externalCallId)->first();
+            }
+            if (!$historico) {
+                // Tenta encontrar a última tentativa "pendente" para atualizar (fallback)
+                $historico = $os->historicoLigacoes()->where('status_ligacao', 'pendente')->latest()->first();
+            }
         }
         
         if ($historico) {
@@ -59,7 +67,7 @@ class WebhookController extends Controller
                 'data_ligacao' => now()
             ]);
             // Garante que o external_call_id está salvo caso tenha caído no fallback
-            if ($externalCallId && empty($historico->external_call_id)) {
+            if ($externalCallId) {
                 $historico->update(['external_call_id' => $externalCallId]);
             }
         } else {

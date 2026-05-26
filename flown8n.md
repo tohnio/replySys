@@ -63,50 +63,68 @@ DIRETRIZES DE COMPORTAMENTO:
 
 ## ⚙️ 4. Estrutura do Fluxo no n8n
 
-Para implementar a conversa bidirecional com telefonia inteligente, o fluxo no n8n deve conter a seguinte estrutura de nós:
+> [!TIP]
+> **Template Pronto para Importação:** Criamos um arquivo JSON de template completo no caminho [replysys-n8n-workflow.json](file:///d:/Docker/lab/replySys/docker/replysys-n8n-workflow.json).
+> Para importar no seu n8n:
+> 1. Abra e copie todo o conteúdo do arquivo [replysys-n8n-workflow.json](file:///d:/Docker/lab/replySys/docker/replysys-n8n-workflow.json).
+> 2. No painel do seu n8n, crie um novo fluxo de trabalho (Workflow).
+> 3. Clique em qualquer área vazia do editor/canvas e pressione **Ctrl + V** (ou Command + V no Mac).
+> 4. O n8n irá importar e conectar instantaneamente todos os nós configurados!
+
+Para implementar a integração assíncrona de torpedo de voz com o NVoIP, o fluxo no n8n é dividido em duas rotas independentes:
 
 ```mermaid
 graph TD
-    A[1. Webhook: Recebe OS do Laravel] --> B[2. Code: Prepara Dados]
-    B --> C[3. HTTP Request: Inicia Chamada NVoIP]
-    C --> D[4. AI Agent: Processa Diálogo]
-    D --> E[5. LLM: OpenAI/Claude]
-    D --> F[6. Tools: Consultar Dados / Encerrar Chamada]
-    D --> G[7. Webhook Callback: Retorna Dados ao Laravel]
+    subgraph Fluxo A: Inicia Chamada (Disparado pelo Laravel)
+        A1[1. Webhook: Recebe OS] --> A2[2. Code: Prepara Dados]
+        A2 --> A3[3. NVoIP: Inicia Chamada]
+        A3 --> A4[4. HTTP Request: Salva UUID no Laravel]
+    end
+
+    subgraph Fluxo B: Callback (Disparado pelo NVoIP ao finalizar)
+        B1[5. Webhook: NVoIP Callback Trigger] --> B2[6. HTTP Request: Retorna Resultado]
+    end
 ```
 
 ### Detalhamento dos Nós:
 
-1. **Webhook Node (Laravel Trigger):**
+#### **Fluxo A: Inicia Chamada (Laravel -> n8n -> NVoIP)**
+
+1. **1. Webhook: Recebe OS do Laravel:**
    * **Método:** `POST`
-   * **Path:** `replysys-call-trigger`
-   * Recebe: `external_call_id`, `ordem_servico_id`, `cliente.nome`, `cliente.telefone`, `item_reparado`, `valor_orcamento`, `valor_pago` e `callback_url`.
+   * **Path:** `replysys-notification-flow`
+   * Recebe as informações básicas do conserto enviadas pelo Laravel ao entrar no status `REPARADO`.
 
-2. **HTTP Request Node (NVoIP API - Torpedo de Voz / SIP Trunk):**
-   * Conecta à API da NVoIP para originar a chamada telefônica para o número do cliente (`cliente.telefone`).
-   * *Dica:* Para fluxos conversacionais bidirecionais (onde a IA escuta e responde), configure a chamada direcionando o áudio bidirecional para a URL do WebSocket do agente n8n ou utilize um parceiro de voz integrado (como a Vapi/Retell conectada via credenciais SIP da NVoIP).
+2. **2. Code: Prepara Dados:**
+   * Formata os campos de valores, nome, e remove o caractere `+` do telefone para adequação à validação do NVoIP (limite de 13 dígitos).
 
-3. **AI Agent Node (Conversational Agent):**
-   * Configura a lógica de conversação usando o **System Prompt** detalhado na Seção 3.
-   * Conecta a um nó de **Model (OpenAI/Anthropic)** para processamento das intenções.
+3. **3. NVoIP: Inicia Chamada:**
+   * Utiliza o nó da extensão oficial `@nvoip/n8n-nodes-nvoip` configurado com a credencial OAuth2 `nvoipAccessTokenApi`.
+   * Envia o torpedo de voz (TTS) para o número do cliente com a mensagem customizada de que o item está pronto.
 
-4. **Nó de Encerramento (Custom Tool):**
-   * Uma ferramenta (Tool) de código JavaScript simples conectada ao agente de IA. Quando o agente detecta que a conversa acabou ("tchau", "obrigado"), ele chama essa Tool para desligar a chamada ativamente na NVoIP.
+4. **4. HTTP Request: Salva UUID no Laravel:**
+   * Dispara um callback rápido de volta ao Laravel (`callback_url`), atualizando o campo `external_call_id` da tentativa da ligação com o ID exclusivo (`uuid`) retornado pela API da NVoIP, mantendo o status em `pendente`.
 
-5. **HTTP Request Node (Laravel Callback):**
-   * Após o término da ligação (seja por encerramento natural ou falha), este nó envia o relatório final de volta para o backend Laravel:
-   * **URL:** `{{ $json.callback_url }}`
+#### **Fluxo B: Callback de Status (NVoIP -> n8n -> Laravel)**
+
+5. **5. Webhook: NVoIP Callback Trigger:**
    * **Método:** `POST`
+   * **Path:** `nvoip-call-ended-callback`
+   * **Configuração:** Esta URL deve ser cadastrada na sua conta NVoIP (no portal do cliente) para que o NVoIP notifique o n8n assim que a chamada terminar.
+
+6. **6. HTTP Request: Retorna Resultado ao Laravel:**
+   * Recebe o payload do NVoIP contendo o `uuid`, `duration` e `status` da chamada.
+   * Envia uma requisição HTTP de volta ao Laravel atualizando a tentativa com o status final (`atendida` ou `caixa_postal`), disparando a lógica de novas tentativas automáticas se necessário.
+   * **URL:** `http://nginx/api/webhook/n8n`
    * **Payload:**
      ```json
-      {
-        "external_call_id": "{{ $json.external_call_id }}",
-        "ordem_servico_id": {{ $json.ordem_servico_id }},
-        "status_ligacao": "atendida", // atendida, caixa_postal ou falhou
-        "duracao": 45, // em segundos
-        "transcricao_ia": "Resumo da ligação: Cliente confirmou que o aparelho está pronto e virá buscar amanhã à tarde."
-      }
-      ```
+     {
+       "external_call_id": "{{ $json.body.uuid }}",
+       "status_ligacao": "atendida", // ou caixa_postal
+       "duracao": 45, // em segundos
+       "transcricao_ia": "Chamada terminada. Status NVoIP: success"
+     }
+     ```
 
 ---
 

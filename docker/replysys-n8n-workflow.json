@@ -1,0 +1,231 @@
+{
+  "name": "ReplySys - Fluxo de Ligação Inteligente (NVoIP & AI Agent)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "replysys-notification-flow",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "laravel-webhook-trigger",
+      "name": "1. Webhook: Recebe OS do Laravel",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json;\nreturn {\n  external_call_id: body.external_call_id,\n  ordem_servico_id: body.ordem_servico_id,\n  cliente_nome: body.cliente?.nome,\n  cliente_telefone: body.cliente?.telefone ? body.cliente.telefone.replace(/^\\+55/, '').replace(/^\\+/, '') : '',\n  item_reparado: body.item_reparado,\n  valor_orcamento: body.valor_orcamento,\n  valor_pago: body.valor_pago,\n  valor_restante: (body.valor_orcamento - body.valor_pago).toFixed(2),\n  defeito_relatado: body.defeito_relatado,\n  callback_url: body.callback_url\n};"
+      },
+      "id": "prepare-data-code",
+      "name": "2. Code: Prepara Dados",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "call",
+        "operation": "sendVoiceBlast",
+        "callerId": "YOUR_NVOIP_CALLER_ID",
+        "destination": "={{ $json.cliente_telefone }}",
+        "audioContent": "=Olá, {{ $json.cliente_nome }}! Seu {{ $json.item_reparado }} está pronto para retirada. O valor restante a pagar é de R$ {{ $json.valor_restante }}."
+      },
+      "id": "nvoip-native-node",
+      "name": "3. NVoIP: Inicia Chamada",
+      "type": "@nvoip/n8n-nodes-nvoip.nvoip",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Você é a assistente virtual inteligente da Sapataria Souza, uma sapataria localizada no bairro Cavalhada de Porto Alegre.\nSua missão é ser extremamente educada, objetiva e falar em português brasileiro natural (pt-BR).\n\nDADOS DA LIGAÇÃO:\n- Cliente: {{ $node[\"2. Code: Prepara Dados\"].json.cliente_nome }}\n- Aparelho/Sapato: {{ $node[\"2. Code: Prepara Dados\"].json.item_reparado }}\n- Valor a pagar: R$ {{ $node[\"2. Code: Prepara Dados\"].json.valor_restante }}\n\nDADOS DA LOJA (Se o cliente perguntar):\n- Endereço: Otto Niemeyer, 3210 - Cavalhada, Porto Alegre - RS.\n- Horário de Funcionamento: Segunda a Sexta-feira, das 09:00 às 18:00 (Não abrimos aos sábados e domingos).\n\nDIRETRIZES DE COMPORTAMENTO:\n1. Inicie a chamada cumprimentando o cliente pelo nome e informando que o item dele está reparado e pronto para retirada.\n2. Se o cliente perguntar sobre a localização ou horário, responda de forma clara usando estritamente os DADOS DA LOJA informados acima.\n3. Mantenha as respostas curtas e naturais, adequadas para uma conversa telefônica (evite textos longos ou listas complexas).\n4. Assim que o cliente confirmar que entendeu ou se despedir, finalize a chamada de forma educada e encerre a conexão.",
+        "options": {}
+      },
+      "id": "ai-agent-conversational",
+      "name": "4. AI Agent: Processa Diálogo",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1,
+      "position": [
+        720,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "options": {
+          "temperature": 0.3
+        }
+      },
+      "id": "openai-chat-model",
+      "name": "5. LLM: OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [
+        650,
+        500
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "window-buffer-memory",
+      "name": "6. Memory: Window Buffer",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1,
+      "position": [
+        780,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "name": "encerrar_chamada",
+        "description": "Ferramenta para encerrar a chamada telefônica ativamente quando a conversa terminar ou o cliente se despedir",
+        "jsCode": "return { status: 'chamada_encerrada' };"
+      },
+      "id": "end-call-tool",
+      "name": "Tools: Encerrar Chamada",
+      "type": "@n8n/n8n-nodes-langchain.toolCalculator",
+      "typeVersion": 1,
+      "position": [
+        910,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $node[\"2. Code: Prepara Dados\"].json.callback_url.replace(/localhost(:\\d+)?|127\\.0\\.0\\.1(:\\d+)?/, 'nginx') }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "external_call_id",
+              "value": "={{ $node[\"2. Code: Prepara Dados\"].json.external_call_id }}"
+            },
+            {
+              "name": "ordem_servico_id",
+              "value": "={{ $node[\"2. Code: Prepara Dados\"].json.ordem_servico_id }}"
+            },
+            {
+              "name": "status_ligacao",
+              "value": "={{ $json.status_ligacao || 'atendida' }}"
+            },
+            {
+              "name": "duracao",
+              "value": "={{ $json.duracao || 45 }}"
+            },
+            {
+              "name": "transcricao_ia",
+              "value": "={{ $json.output || 'Cliente notificado com sucesso pelo Assistente Virtual.' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "laravel-callback-request",
+      "name": "7. HTTP Request: Retorna Dados ao Laravel",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1100,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "1. Webhook: Recebe OS do Laravel": {
+      "main": [
+        [
+          {
+            "node": "2. Code: Prepara Dados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. Code: Prepara Dados": {
+      "main": [
+        [
+          {
+            "node": "3. NVoIP: Inicia Chamada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3. NVoIP: Inicia Chamada": {
+      "main": [
+        [
+          {
+            "node": "4. AI Agent: Processa Diálogo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "5. LLM: OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "4. AI Agent: Processa Diálogo",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "6. Memory: Window Buffer": {
+      "ai_memory": [
+        [
+          {
+            "node": "4. AI Agent: Processa Diálogo",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tools: Encerrar Chamada": {
+      "ai_tool": [
+        [
+          {
+            "node": "4. AI Agent: Processa Diálogo",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4. AI Agent: Processa Diálogo": {
+      "main": [
+        [
+          {
+            "node": "7. HTTP Request: Retorna Dados ao Laravel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "timezone": "America/Sao_Paulo"
+  }
+}
