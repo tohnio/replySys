@@ -214,7 +214,7 @@ class OsTest extends TestCase
         $this->assertEquals('', $cliente->telefone);
     }
 
-    public function test_update_status_to_reparado_dispatches_call_job(): void
+    public function test_update_status_to_reparado_dispatches_whatsapp_job(): void
     {
         \Illuminate\Support\Facades\Queue::fake();
 
@@ -235,7 +235,7 @@ class OsTest extends TestCase
 
         $response->assertStatus(200);
 
-        \Illuminate\Support\Facades\Queue::assertPushed(\App\Jobs\CallCustomerJob::class, function ($job) use ($os) {
+        \Illuminate\Support\Facades\Queue::assertPushed(\App\Jobs\WhatsAppNotificationJob::class, function ($job) use ($os) {
             return $job->os->id === $os->id;
         });
     }
@@ -260,7 +260,7 @@ class OsTest extends TestCase
 
         $response->assertStatus(200);
 
-        \Illuminate\Support\Facades\Queue::assertNotPushed(\App\Jobs\CallCustomerJob::class);
+        \Illuminate\Support\Facades\Queue::assertNotPushed(\App\Jobs\WhatsAppNotificationJob::class);
     }
 
     public function test_update_status_to_entregue_sets_data_entregue(): void
@@ -283,6 +283,74 @@ class OsTest extends TestCase
 
         $response->assertStatus(200);
         $this->assertNotNull($os->fresh()->data_entregue);
+    }
+
+    public function test_manual_redial_triggers_call_job(): void
+    {
+        \Illuminate\Support\Facades\Queue::fake();
+
+        $cliente = Cliente::create(['nome' => 'Cliente Redial', 'telefone' => '11944443333']);
+        $os = OrdemServico::create([
+            'cliente_id' => $cliente->id,
+            'descricao_item' => 'Sapato',
+            'status' => 'REPARADO',
+            'valor_orcamento' => 120.00,
+            'status_pagamento' => 'pendente',
+            'defeito_relatado' => ''
+        ]);
+
+        $response = $this->postJson("/api/ordens-servico/{$os->id}/redial");
+
+        $response->assertStatus(200)
+                 ->assertJsonPath('status', 'success');
+
+        \Illuminate\Support\Facades\Queue::assertPushed(\App\Jobs\CallCustomerJob::class, function ($job) use ($os) {
+            return $job->os->id === $os->id;
+        });
+    }
+
+    public function test_manual_redial_fails_if_not_reparado(): void
+    {
+        \Illuminate\Support\Facades\Queue::fake();
+
+        $cliente = Cliente::create(['nome' => 'Cliente Redial', 'telefone' => '11944443333']);
+        $os = OrdemServico::create([
+            'cliente_id' => $cliente->id,
+            'descricao_item' => 'Sapato',
+            'status' => 'EM_REPARO',
+            'valor_orcamento' => 120.00,
+            'status_pagamento' => 'pendente',
+            'defeito_relatado' => ''
+        ]);
+
+        $response = $this->postJson("/api/ordens-servico/{$os->id}/redial");
+
+        $response->assertStatus(400)
+                 ->assertJsonPath('status', 'error');
+
+        \Illuminate\Support\Facades\Queue::assertNotPushed(\App\Jobs\CallCustomerJob::class);
+    }
+
+    public function test_manual_redial_fails_if_no_phone(): void
+    {
+        \Illuminate\Support\Facades\Queue::fake();
+
+        $cliente = Cliente::create(['nome' => 'Cliente Sem Fone', 'telefone' => '']);
+        $os = OrdemServico::create([
+            'cliente_id' => $cliente->id,
+            'descricao_item' => 'Sapato',
+            'status' => 'REPARADO',
+            'valor_orcamento' => 120.00,
+            'status_pagamento' => 'pendente',
+            'defeito_relatado' => ''
+        ]);
+
+        $response = $this->postJson("/api/ordens-servico/{$os->id}/redial");
+
+        $response->assertStatus(400)
+                 ->assertJsonPath('status', 'error');
+
+        \Illuminate\Support\Facades\Queue::assertNotPushed(\App\Jobs\CallCustomerJob::class);
     }
 }
 

@@ -86,6 +86,82 @@ class N8nService
     }
 
     /**
+     * Aciona o webhook do n8n para iniciar o fluxo de WhatsApp com o cliente.
+     */
+    public function sendWhatsApp(OrdemServico $os): bool
+    {
+        // Só realiza se a OS estiver no status REPARADO
+        if ($os->status !== 'REPARADO') {
+            Log::info("N8nService: OS {$os->id} não está no status REPARADO (Status atual: {$os->status}). Cancelando WhatsApp.");
+            return false;
+        }
+
+        $cliente = $os->cliente;
+        if (!$cliente || empty($cliente->telefone)) {
+            Log::info("N8nService: OS {$os->id} não possui telefone de cliente. Ignorando WhatsApp.");
+            return false;
+        }
+
+        $webhookUrl = config('services.n8n.whatsapp_webhook_url');
+
+        // Formata o telefone para o padrão E.164 (+55...) para n8n/NVoIP
+        $telefoneFormatado = $this->formatPhoneNumberToE164($cliente->telefone);
+
+        // Gera um ID único para rastreamento da chamada/fluxo de conversa
+        $externalCallId = (string) Str::uuid();
+
+        // Registra a tentativa no histórico (status: pendente)
+        $historico = $os->historicoLigacoes()->create([
+            'external_call_id' => $externalCallId,
+            'status_ligacao' => 'pendente',
+            'data_ligacao' => now(),
+        ]);
+
+        if (empty($webhookUrl)) {
+            Log::warning("N8nService: N8N_WHATSAPP_WEBHOOK_URL não configurado no .env. Simulando WhatsApp no desenvolvimento.");
+            return true;
+        }
+
+        try {
+            $payload = [
+                'external_call_id' => $externalCallId,
+                'ordem_servico_id' => $os->id,
+                'cliente' => [
+                    'nome' => $cliente->nome,
+                    'telefone' => $telefoneFormatado,
+                ],
+                'item_reparado' => $os->descricao_item ?? $os->modelo,
+                'valor_orcamento' => (float) $os->valor_orcamento,
+                'valor_pago' => (float) $os->valor_pago,
+                'defeito_relatado' => $os->defeito_relatado,
+                'callback_url' => url('/api/webhook/n8n'),
+            ];
+
+            Log::info("N8nService: Enviando requisição para n8n em {$webhookUrl} para WhatsApp de {$telefoneFormatado} (OS {$os->id})");
+
+            $response = Http::withoutVerifying()->post($webhookUrl, $payload);
+
+            if ($response->successful()) {
+                Log::info("N8nService: Webhook do n8n (WhatsApp) disparado com sucesso para OS {$os->id}. External Call ID: {$externalCallId}");
+                return true;
+            } else {
+                Log::error("N8nService: Erro ao disparar webhook de WhatsApp do n8n para OS {$os->id}. Status: " . $response->status() . " | Resposta: " . $response->body());
+                
+                $historico->update([
+                    'status_ligacao' => 'falhou'
+                ]);
+                return false;
+            }
+        } catch (\Exception $e) {
+            Log::error("N8nService: Exceção ao chamar n8n (WhatsApp) para OS {$os->id}: " . $e->getMessage());
+            $historico->update([
+                'status_ligacao' => 'falhou'
+            ]);
+            return false;
+        }
+    }
+
+    /**
      * Formata o telefone para o padrão E.164 do Brasil (+55...)
      */
     private function formatPhoneNumberToE164(string $phone): string

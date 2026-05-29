@@ -1,0 +1,391 @@
+{
+  "name": "n8n-workflow-whatsapp-chat",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "replysys-whatsapp-flow",
+        "options": {}
+      },
+      "id": "b181321b-76dd-4b5f-a446-9e7180fcbf3d",
+      "name": "1. Webhook: Recebe OS do Laravel",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -1216,
+        -64
+      ],
+      "webhookId": "d6066d8d-9bf8-4f68-a231-5ec20b28ccca"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json;\nconst diff = body.valor_orcamento - body.valor_pago;\nconst valorRestante = diff.toFixed(2);\n\nreturn {\n  external_call_id: body.external_call_id,\n  ordem_servico_id: body.ordem_servico_id,\n  cliente_nome: body.cliente?.nome,\n  cliente_telefone: body.cliente?.telefone ? body.cliente.telefone.replace(/^\\+/, '') : '',\n  item_reparado: body.item_reparado,\n  valor_restante: valorRestante,\n  callback_url: body.callback_url\n};"
+      },
+      "id": "25241627-4498-45b6-8b12-56883b86d10d",
+      "name": "2. Code: Prepara Dados",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -992,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://evolution-api:8080/message/sendText/replysys_instance",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "replysys_secret_token"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"number\": \"{{ $json.cliente_telefone }}\",\n  \"text\": \"Olá, {{ $json.cliente_nome }}! Aqui é da Sapataria Souza.\\n\\nPassando para avisar que o seu {{ $json.item_reparado }} já está pronto!\\nO valor restante a ser pago é de R$ {{ $json.valor_restante }}.\\n\\nVocê pode vir retirar de segunda a sexta-feira, das 09h às 18h na Av. Otto Niemeyer, 3210 - Cavalhada, Porto Alegre.\\n\\nQualquer dúvida estamos à disposição!\"\n}"
+      },
+      "id": "ea80b80d-1567-45d4-ad19-5d3a796ed72c",
+      "name": "3. Evolution API: Envia WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -768,
+        -64
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "none",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "check-error",
+              "leftValue": "={{ $json.error ? $json.error : '' }}",
+              "rightValue": "",
+              "operator": "isEmpty"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "bd44c0ae-9575-4fdd-b8b3-a77c1bda4b7d",
+      "name": "4. If: WhatsApp Enviado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -544,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $node[\"2. Code: Prepara Dados\"].json.callback_url.replace(/localhost(:\\d+)?|127\\.0\\.0\\.1(:\\d+)?/, 'nginx') }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "external_call_id",
+              "value": "={{ $node[\"2. Code: Prepara Dados\"].json.external_call_id }}"
+            },
+            {
+              "name": "ordem_servico_id",
+              "value": "={{ $node[\"2. Code: Prepara Dados\"].json.ordem_servico_id }}"
+            },
+            {
+              "name": "status_ligacao",
+              "value": "whatsapp"
+            },
+            {
+              "name": "transcricao_ia",
+              "value": "WhatsApp enviado com sucesso para notificar o cliente."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "5f674b71-ab50-46df-a225-07394529c655",
+      "name": "5. HTTP Request: Salva no Laravel",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -320,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $node[\"2. Code: Prepara Dados\"].json.callback_url.replace(/localhost(:\\d+)?|127\\.0\\.0\\.1(:\\d+)?/, 'nginx').replace('/webhook/n8n', '/ordens-servico/' + $node[\"2. Code: Prepara Dados\"].json.ordem_servico_id + '/redial') }}",
+        "options": {}
+      },
+      "id": "2b8f8536-2868-4036-a689-289aa21f3646",
+      "name": "5. HTTP Request: Fallback Ligação",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -320,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "evolution-whatsapp-response-webhook",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "4756224b-b74d-4a42-a070-460676eb36df",
+      "name": "6. Webhook: Resposta WhatsApp",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -1216,
+        368
+      ],
+      "webhookId": "77340249-2353-4c50-a41d-85b65a0d1dc8"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json;\n\n// Se a mensagem foi enviada pela própria API (bot), ignora para evitar loop\nif (body.data?.key?.fromMe === true) {\n  return [];\n}\n\n// Extrai o texto da mensagem de várias localizações possíveis\nconst text = body.data?.message?.conversation || \n             body.data?.message?.extendedTextMessage?.text || \n             body.data?.message?.imageMessage?.caption || \n             body.data?.message?.videoMessage?.caption || \n             \"\";\n\nconst remoteJid = body.data?.key?.remoteJid || \"\";\n// O remoteJid é no formato \"5551999999999@s.whatsapp.net\", extraímos apenas os números\nconst phone = remoteJid.split('@')[0];\n\nif (!phone) {\n  return [];\n}\n\nreturn {\n  user_input: text,\n  cliente_telefone: phone\n};"
+      },
+      "id": "db003c80-6f78-47a4-af92-a4b8b8d5d6e0",
+      "name": "7. Code: Processa Entrada WhatsApp",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -992,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ \"http://nginx/api/webhook/n8n/client-details/\" + $node[\"7. Code: Processa Entrada WhatsApp\"].json.cliente_telefone }}",
+        "options": {}
+      },
+      "id": "29fafad6-9734-4677-9bf7-1294a040c9c9",
+      "name": "8. HTTP Request: Busca Contexto OS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -768,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "text": "={{ $node[\"7. Code: Processa Entrada WhatsApp\"].json.user_input }}",
+        "options": {
+          "systemMessage": "=Você é a assistente virtual inteligente da Sapataria Souza, uma sapataria localizada no bairro Cavalhada de Porto Alegre.\nSua missão é ser extremamente educada, objetiva e falar em português brasileiro natural (pt-BR).\n\nDADOS DA CONVERSA:\n- Cliente: {{ $json.cliente_nome }}\n- Aparelho/Sapato: {{ $json.item_reparado }}\n- Valor a pagar: {{ $json.valor_restante }} reais\n\nDADOS DA LOJA (Se o cliente perguntar):\n- Endereço: Otto Niemeyer, 3210 - Cavalhada, Porto Alegre - RS.\n- Horário de Funcionamento: Segunda a Sexta-feira, das 09:00 às 18:00 (Não abrimos aos sábados e domingos).\n\nDIRETRIZES DE COMPORTAMENTO:\n1. Se o cliente perguntar sobre a localização ou horário, responda de forma clara usando estritamente os DADOS DA LOJA informados acima.\n2. Se o cliente perguntar sobre preço ou valor a pagar, diga o valor restante de forma clara.\n3. Mantenha as respostas curtas e naturais, adequadas para uma conversa de chat de WhatsApp (evite textos longos ou listas complexas)."
+        }
+      },
+      "id": "2398b610-f169-45ab-8f19-092344177aaa",
+      "name": "9. AI Agent: Processa Diálogo",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1,
+      "position": [
+        -544,
+        368
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "6b8a812d-e028-45ad-863f-db6994286af5",
+      "name": "11. Memory: Window Buffer",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1,
+      "position": [
+        -432,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://evolution-api:8080/message/sendText/replysys_instance",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "replysys_secret_token"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"number\": \"{{ $node[\\\"7. Code: Processa Entrada WhatsApp\\\"].json.cliente_telefone }}\",\n  \"text\": \"{{ $json.output }}\"\n}"
+      },
+      "id": "41dcf3a3-4286-45a3-b30e-5fd7eacd7096",
+      "name": "12. Evolution API: Envia Resposta WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -192,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-oss-20b:free",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        -544,
+        576
+      ],
+      "id": "bb50dbb4-efa6-4708-a367-ee529ca7ca74",
+      "name": "OpenRouter Chat Model",
+      "credentials": {
+        "openRouterApi": {
+          "id": "nRqXN2Sq2yyc8f99",
+          "name": "OpenRouter account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "1. Webhook: Recebe OS do Laravel": {
+      "main": [
+        [
+          {
+            "node": "2. Code: Prepara Dados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. Code: Prepara Dados": {
+      "main": [
+        [
+          {
+            "node": "3. Evolution API: Envia WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3. Evolution API: Envia WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "4. If: WhatsApp Enviado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4. If: WhatsApp Enviado?": {
+      "main": [
+        [
+          {
+            "node": "5. HTTP Request: Salva no Laravel",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "5. HTTP Request: Fallback Ligação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "6. Webhook: Resposta WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "7. Code: Processa Entrada WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "7. Code: Processa Entrada WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "8. HTTP Request: Busca Contexto OS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "8. HTTP Request: Busca Contexto OS": {
+      "main": [
+        [
+          {
+            "node": "9. AI Agent: Processa Diálogo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "11. Memory: Window Buffer": {
+      "ai_memory": [
+        [
+          {
+            "node": "9. AI Agent: Processa Diálogo",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "9. AI Agent: Processa Diálogo": {
+      "main": [
+        [
+          {
+            "node": "12. Evolution API: Envia Resposta WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "9. AI Agent: Processa Diálogo",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "8f38c3fa-479f-4f73-bac6-bd914936d594",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "6c2bcb84d8c24d8220f073aff0a1867f3bb679520f5085ea1787424f67210b3c"
+  },
+  "id": "4cTQf08bA6mHtuHF",
+  "tags": []
+}

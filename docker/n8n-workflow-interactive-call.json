@@ -1,0 +1,471 @@
+{
+  "name": "n8n-workflow-interactive-call",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "replysys-interactive-flow",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "laravel-webhook-trigger-interactive",
+      "name": "1. Webhook: Recebe OS do Laravel",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        150
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json;\nconst diff = body.valor_orcamento - body.valor_pago;\nconst valorRestante = diff.toFixed(2);\n\nfunction formatarValorParaTTS(valorStr) {\n  const [reaisStr, centavosStr] = valorStr.split('.');\n  const reais = parseInt(reaisStr, 10);\n  const centavos = parseInt(centavosStr, 10);\n  if (reais === 0 && centavos === 0) return 'zero reais';\n  let partes = [];\n  if (reais > 0) partes.push(reais + (reais === 1 ? ' real' : ' reais'));\n  if (centavos > 0) partes.push(centavos + (centavos === 1 ? ' centavo' : ' centavos'));\n  return partes.join(' e ');\n}\nconst valorPorExtenso = formatarValorParaTTS(valorRestante);\n\n// Geração de texto para o torpedo de voz inicial da NVoIP (sem o símbolo R$)\nconst audio1 = `Olá, ${body.cliente?.nome || 'Cliente'}! Aqui é a assistente virtual da Sapataria Souza. O seu ${body.item_reparado || 'aparelho'} já está consertado e pronto para retirada! O valor restante a pagar é de ${valorPorExtenso}.`;\n\nreturn {\n  external_call_id: body.external_call_id,\n  ordem_servico_id: body.ordem_servico_id,\n  cliente_nome: body.cliente?.nome,\n  cliente_telefone: body.cliente?.telefone ? body.cliente.telefone.replace(/^\\+55/, '').replace(/^\\+/, '') : '',\n  item_reparado: body.item_reparado,\n  valor_restante: valorRestante,\n  valor_restante_extenso: valorPorExtenso,\n  callback_url: body.callback_url,\n  audio1: audio1\n};"
+      },
+      "id": "prepare-data-code-interactive",
+      "name": "2. Code: Prepara Dados",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        300,
+        150
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "call",
+        "operation": "sendVoiceBlast",
+        "callerId": "142444002",
+        "destination": "={{ $json.cliente_telefone }}",
+        "audioContent": "={{ $json.audio1 }}"
+      },
+      "id": "nvoip-interactive-node",
+      "name": "3. NVoIP: Inicia Chamada",
+      "type": "@nvoip/n8n-nodes-nvoip.nvoip",
+      "typeVersion": 1,
+      "position": [
+        500,
+        150
+      ],
+      "credentials": {
+        "nvoipAccessTokenApi": {
+          "id": "YOUR_NVOIP_CREDENTIALS_ID",
+          "name": "NVoIP Access Token Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $node[\"2. Code: Prepara Dados\"].json.callback_url.replace(/localhost(:\\d+)?|127\\.0\\.0\\.1(:\\d+)?/, 'nginx') }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "external_call_id",
+              "value": "={{ $json.uuid }}"
+            },
+            {
+              "name": "ordem_servico_id",
+              "value": "={{ $node[\"2. Code: Prepara Dados\"].json.ordem_servico_id }}"
+            },
+            {
+              "name": "status_ligacao",
+              "value": "pendente"
+            },
+            {
+              "name": "transcricao_ia",
+              "value": "={{ \"IA: \" + $node[\"2. Code: Prepara Dados\"].json.audio1 }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "laravel-initial-update-interactive",
+      "name": "4. HTTP Request: Salva UUID no Laravel",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        720,
+        150
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "nvoip-interactive-speech-webhook",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "nvoip-speech-trigger",
+      "name": "5. Webhook: NVoIP Speech Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json;\nconst text = body.mensagem || body.texto || body.speech || body.text || body.transcricao || \"\";\nconst callId = body.uuid || body.call_id || body.external_call_id || \"\";\nreturn {\n  user_input: text,\n  session_id: callId\n};"
+      },
+      "id": "process-speech-input",
+      "name": "6. Code: Processa Entrada de Fala",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        300,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://nginx/api/webhook/n8n",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "external_call_id",
+              "value": "={{ $json.session_id }}"
+            },
+            {
+              "name": "transcricao_ia",
+              "value": "={{ \"Cliente: \" + $json.user_input }}"
+            },
+            {
+              "name": "append",
+              "value": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "laravel-save-speech",
+      "name": "7. HTTP Request: Salva Fala Cliente no Laravel",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        500,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ \"http://nginx/api/webhook/n8n/call-details/\" + $node[\"6. Code: Processa Entrada de Fala\"].json.session_id }}",
+        "options": {}
+      },
+      "id": "laravel-fetch-context",
+      "name": "8. HTTP Request: Busca Contexto da OS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        700,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $node[\"6. Code: Processa Entrada de Fala\"].json.user_input }}",
+        "options": {
+          "systemMessage": "=Você é a assistente virtual inteligente da Sapataria Souza, uma sapataria localizada no bairro Cavalhada de Porto Alegre.\nSua missão é ser extremamente educada, objetiva e falar em português brasileiro natural (pt-BR).\n\nDADOS DA LIGAÇÃO:\n- Cliente: {{ $json.cliente_nome }}\n- Aparelho/Sapato: {{ $json.item_reparado }}\n- Valor a pagar: {{ $json.valor_restante }} reais\n\nDADOS DA LOJA (Se o cliente perguntar):\n- Endereço: Otto Niemeyer, 3210 - Cavalhada, Porto Alegre - RS.\n- Horário de Funcionamento: Segunda a Sexta-feira, das 09:00 às 18:00 (Não abrimos aos sábados e domingos).\n\nDIRETRIZES DE COMPORTAMENTO:\n1. Se o cliente perguntar sobre a localização ou horário, responda de forma clara usando estritamente os DADOS DA LOJA informados acima.\n2. Mantenha as respostas curtas e naturais, adequadas para uma conversa telefônica (evite textos longos ou listas complexas).\n3. Se o cliente se despedir ou confirmar que já entendeu (ex: \"obrigado\", \"tchau\", \"até logo\", \"entendido\"), despeça-se gentilmente e encerre o diálogo."
+        }
+      },
+      "id": "ai-agent-interactive",
+      "name": "9. AI Agent: Processa Diálogo",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1,
+      "position": [
+        920,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-oss-20b",
+        "options": {
+          "temperature": 0.3,
+          "baseUrl": "https://openrouter.ai/api/v1"
+        }
+      },
+      "id": "openai-chat-model-interactive",
+      "name": "10. LLM: OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [
+        850,
+        650
+      ]
+    },
+    {
+      "parameters": {
+        "sessionId": "={{ $node[\"6. Code: Processa Entrada de Fala\"].json.session_id }}"
+      },
+      "id": "window-buffer-memory-interactive",
+      "name": "11. Memory: Window Buffer",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1,
+      "position": [
+        980,
+        650
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://nginx/api/webhook/n8n",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "external_call_id",
+              "value": "={{ $node[\"6. Code: Processa Entrada de Fala\"].json.session_id }}"
+            },
+            {
+              "name": "transcricao_ia",
+              "value": "={{ \"IA: \" + $json.output }}"
+            },
+            {
+              "name": "append",
+              "value": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "laravel-save-ai-response",
+      "name": "12. HTTP Request: Salva Resposta IA no Laravel",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1120,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return {\n  resposta: $json.output\n};"
+      },
+      "id": "format-response-node",
+      "name": "13. Code: Formata Resposta NVoIP",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "nvoip-interactive-call-ended",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "nvoip-ended-callback-interactive",
+      "name": "14. Webhook: NVoIP Call Ended Callback",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json;\nreturn {\n  uuid: body.uuid,\n  status_ligacao: (body.duration > 0 || body.status === 'success' || body.status === 'answered') ? 'atendida' : 'caixa_postal',\n  duracao: body.duration || 0\n};"
+      },
+      "id": "process-call-ended-interactive",
+      "name": "15. Code: Processa Fim da Chamada",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        300,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://nginx/api/webhook/n8n",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "external_call_id",
+              "value": "={{ $json.uuid }}"
+            },
+            {
+              "name": "status_ligacao",
+              "value": "={{ $json.status_ligacao }}"
+            },
+            {
+              "name": "duracao",
+              "value": "={{ $json.duracao }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "laravel-final-update-ended-interactive",
+      "name": "16. HTTP Request: Retorna Resultado ao Laravel",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        500,
+        800
+      ]
+    }
+  ],
+  "connections": {
+    "1. Webhook: Recebe OS do Laravel": {
+      "main": [
+        [
+          {
+            "node": "2. Code: Prepara Dados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. Code: Prepara Dados": {
+      "main": [
+        [
+          {
+            "node": "3. NVoIP: Inicia Chamada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3. NVoIP: Inicia Chamada": {
+      "main": [
+        [
+          {
+            "node": "4. HTTP Request: Salva UUID no Laravel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "5. Webhook: NVoIP Speech Webhook": {
+      "main": [
+        [
+          {
+            "node": "6. Code: Processa Entrada de Fala",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "6. Code: Processa Entrada de Fala": {
+      "main": [
+        [
+          {
+            "node": "7. HTTP Request: Salva Fala Cliente no Laravel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "7. HTTP Request: Salva Fala Cliente no Laravel": {
+      "main": [
+        [
+          {
+            "node": "8. HTTP Request: Busca Contexto da OS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "8. HTTP Request: Busca Contexto da OS": {
+      "main": [
+        [
+          {
+            "node": "9. AI Agent: Processa Diálogo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "10. LLM: OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "9. AI Agent: Processa Diálogo",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "11. Memory: Window Buffer": {
+      "ai_memory": [
+        [
+          {
+            "node": "9. AI Agent: Processa Diálogo",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "9. AI Agent: Processa Diálogo": {
+      "main": [
+        [
+          {
+            "node": "12. HTTP Request: Salva Resposta IA no Laravel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "12. HTTP Request: Salva Resposta IA no Laravel": {
+      "main": [
+        [
+          {
+            "node": "13. Code: Formata Resposta NVoIP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "14. Webhook: NVoIP Call Ended Callback": {
+      "main": [
+        [
+          {
+            "node": "15. Code: Processa Fim da Chamada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "15. Code: Processa Fim da Chamada": {
+      "main": [
+        [
+          {
+            "node": "16. HTTP Request: Retorna Resultado ao Laravel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "timezone": "America/Sao_Paulo"
+  }
+}

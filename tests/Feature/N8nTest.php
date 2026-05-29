@@ -257,4 +257,113 @@ class N8nTest extends TestCase
         Queue::assertNotPushed(CallCustomerJob::class);
         $this->assertNull($historico->fresh()->proxima_tentativa);
     }
+
+    public function test_n8n_webhook_can_append_transcription_logs(): void
+    {
+        $cliente = Cliente::create(['nome' => 'Renato', 'telefone' => '11977776666']);
+        $os = OrdemServico::create([
+            'cliente_id' => $cliente->id,
+            'descricao_item' => 'Tênis de Corrida',
+            'status' => 'REPARADO',
+            'valor_orcamento' => 180.00,
+            'status_pagamento' => 'pendente',
+            'defeito_relatado' => ''
+        ]);
+
+        $historico = HistoricoLigacao::create([
+            'ordem_servico_id' => $os->id,
+            'external_call_id' => 'call-uuid-interactive-789',
+            'status_ligacao' => 'pendente',
+            'transcricao_ia' => 'IA: Olá!',
+            'data_ligacao' => now()
+        ]);
+
+        // First append: Cliente text
+        $payload1 = [
+            'external_call_id' => 'call-uuid-interactive-789',
+            'transcricao_ia' => 'Cliente: Olá! Onde fica a loja?',
+            'append' => true
+        ];
+        $response1 = $this->postJson('/api/webhook/n8n', $payload1);
+        $response1->assertStatus(200);
+        $this->assertEquals("IA: Olá!\nCliente: Olá! Onde fica a loja?", $historico->fresh()->transcricao_ia);
+
+        // Second append: IA response
+        $payload2 = [
+            'external_call_id' => 'call-uuid-interactive-789',
+            'transcricao_ia' => 'IA: Fica na Otto Niemeyer, 3210.',
+            'append' => true
+        ];
+        $response2 = $this->postJson('/api/webhook/n8n', $payload2);
+        $response2->assertStatus(200);
+        $this->assertEquals("IA: Olá!\nCliente: Olá! Onde fica a loja?\nIA: Fica na Otto Niemeyer, 3210.", $historico->fresh()->transcricao_ia);
+
+        // Check that call status remained 'pendente'
+        $this->assertEquals('pendente', $historico->fresh()->status_ligacao);
+    }
+
+    public function test_n8n_get_call_details_endpoint(): void
+    {
+        $cliente = Cliente::create(['nome' => 'Carla', 'telefone' => '11966665555']);
+        $os = OrdemServico::create([
+            'cliente_id' => $cliente->id,
+            'descricao_item' => 'Sapato Social',
+            'status' => 'REPARADO',
+            'valor_orcamento' => 200.00,
+            'valor_pago' => 50.00,
+            'status_pagamento' => 'parcial',
+            'defeito_relatado' => ''
+        ]);
+
+        $historico = HistoricoLigacao::create([
+            'ordem_servico_id' => $os->id,
+            'external_call_id' => 'call-uuid-details-abc',
+            'status_ligacao' => 'pendente',
+            'data_ligacao' => now()
+        ]);
+
+        $response = $this->getJson('/api/webhook/n8n/call-details/call-uuid-details-abc');
+
+        $response->assertStatus(200)
+                 ->assertJson([
+                     'cliente_nome' => 'Carla',
+                     'item_reparado' => 'Sapato Social',
+                     'valor_restante' => '150.00'
+                 ]);
+    }
+
+    public function test_n8n_get_call_details_returns_404_if_not_found(): void
+    {
+        $response = $this->getJson('/api/webhook/n8n/call-details/non-existent-uuid');
+        $response->assertStatus(404);
+    }
+
+    public function test_n8n_get_client_details_endpoint(): void
+    {
+        $cliente = Cliente::create(['nome' => 'Bruno', 'telefone' => '11955554444']);
+        $os = OrdemServico::create([
+            'cliente_id' => $cliente->id,
+            'descricao_item' => 'Cinto de Couro',
+            'status' => 'REPARADO',
+            'valor_orcamento' => 80.00,
+            'valor_pago' => 0.00,
+            'status_pagamento' => 'pendente',
+            'defeito_relatado' => ''
+        ]);
+
+        $response = $this->getJson('/api/webhook/n8n/client-details/+5511955554444');
+
+        $response->assertStatus(200)
+                 ->assertJson([
+                     'cliente_nome' => 'Bruno',
+                     'item_reparado' => 'Cinto de Couro',
+                     'valor_restante' => '80.00'
+                 ]);
+    }
+
+    public function test_n8n_get_client_details_returns_404_if_not_found(): void
+    {
+        $response = $this->getJson('/api/webhook/n8n/client-details/5599999999999');
+        $response->assertStatus(404);
+    }
 }

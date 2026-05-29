@@ -67,7 +67,7 @@ class OsController extends Controller
             $os->data_reparo = now();
             $os->save();
             if ($os->cliente && !empty($os->cliente->telefone)) {
-                \App\Jobs\CallCustomerJob::dispatch($os);
+                \App\Jobs\WhatsAppNotificationJob::dispatch($os);
             }
         } else if ($request->status === 'ENTREGUE' && $statusAnterior !== 'ENTREGUE') {
             $os->data_entregue = now();
@@ -220,6 +220,36 @@ class OsController extends Controller
         ]);
 
         return response()->json(['message' => 'OS atualizada com sucesso!', 'os' => $os->load('cliente')]);
+    }
+
+    #[OA\Post(
+        path: "/ordens-servico/{id}/redial",
+        summary: "Dispara uma chamada telefônica manualmente",
+        description: "Dispara o CallCustomerJob se a OS estiver no status REPARADO.",
+        tags: ["Ordens de Servico"],
+        parameters: [
+            new OA\Parameter(name: "id", in: "path", required: true, schema: new OA\Schema(type: "integer"))
+        ],
+        responses: [
+            new OA\Response(response: 200, description: "Ligação iniciada com sucesso"),
+            new OA\Response(response: 400, description: "Ordem de serviço não elegível")
+        ]
+    )]
+    public function redial($id)
+    {
+        $os = \App\Models\OrdemServico::findOrFail($id);
+        
+        if ($os->status !== 'REPARADO') {
+            return response()->json(['status' => 'error', 'message' => 'Ordem de serviço não está no status REPARADO.'], 400);
+        }
+
+        if (empty($os->cliente->telefone)) {
+            return response()->json(['status' => 'error', 'message' => 'Cliente não possui telefone cadastrado.'], 400);
+        }
+
+        \App\Jobs\CallCustomerJob::dispatch($os);
+
+        return response()->json(['status' => 'success', 'message' => 'Ligação disparada com sucesso!']);
     }
 
     /**

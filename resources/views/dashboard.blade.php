@@ -273,7 +273,15 @@
                                     </div>
                                     <div class="text-right">
                                         @if($ligacao->status_ligacao == 'pendente')
-                                            <span class="text-sm font-medium text-slate-400">Pendente</span>
+                                            <div class="flex flex-col items-end gap-1">
+                                                <span class="text-sm font-medium text-slate-400">Pendente</span>
+                                                @if($ligacao->ordemServico && $ligacao->ordemServico->status === 'REPARADO')
+                                                    <button onclick="redialCall({{ $ligacao->ordem_servico_id }})" class="px-2 py-0.5 mt-1 rounded text-[10px] font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition-all shadow-sm flex items-center gap-0.5 cursor-pointer" title="Ligar novamente">
+                                                        <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.94.725l.548 2.2a1 1 0 01-.321.988l-1.305.98a10.582 10.582 0 004.872 4.872l.98-1.305a1 1 0 01.988-.321l2.2.548a1 1 0 01.725.94V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path></svg>
+                                                        Disparar
+                                                    </button>
+                                                @endif
+                                            </div>
                                         @elseif($ligacao->status_ligacao == 'atendida')
                                             <span class="text-sm font-medium text-emerald-400">Atendida</span>
                                             @if($ligacao->duracao)
@@ -660,6 +668,36 @@
             .catch(err => {
                 console.error(err);
                 alert('Ocorreu um erro ao alterar o status da Ordem de Serviço.');
+            });
+        }
+
+        function redialCall(osId) {
+            if (!confirm('Deseja iniciar uma nova tentativa de ligação para este cliente?')) {
+                return;
+            }
+            
+            fetch(`/api/ordens-servico/${osId}/redial`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    return response.json().then(err => {
+                        throw new Error(err.message || 'Erro ao disparar ligação');
+                    });
+                }
+                return response.json();
+            })
+            .then(data => {
+                alert(data.message || 'Ligação disparada com sucesso!');
+                window.location.reload();
+            })
+            .catch(err => {
+                console.error(err);
+                alert(err.message || 'Ocorreu um erro ao disparar a ligação.');
             });
         }
     </script>

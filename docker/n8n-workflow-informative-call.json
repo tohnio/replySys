@@ -1,5 +1,5 @@
 {
-  "name": "ReplySys - Fluxo de Ligação Inteligente (NVoIP & AI Agent)",
+  "name": "n8n-workflow-informative-call",
   "nodes": [
     {
       "parameters": {
@@ -19,7 +19,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const body = $json.body || $json;\nreturn {\n  external_call_id: body.external_call_id,\n  ordem_servico_id: body.ordem_servico_id,\n  cliente_nome: body.cliente?.nome,\n  cliente_telefone: body.cliente?.telefone ? body.cliente.telefone.replace(/^\\+55/, '').replace(/^\\+/, '') : '',\n  item_reparado: body.item_reparado,\n  valor_orcamento: body.valor_orcamento,\n  valor_pago: body.valor_pago,\n  valor_restante: (body.valor_orcamento - body.valor_pago).toFixed(2),\n  defeito_relatado: body.defeito_relatado,\n  callback_url: body.callback_url\n};"
+        "jsCode": "const body = $json.body || $json;\nconst diff = body.valor_orcamento - body.valor_pago;\nconst valorRestante = diff.toFixed(2);\n\nfunction formatarValorParaTTS(valorStr) {\n  const [reaisStr, centavosStr] = valorStr.split('.');\n  const reais = parseInt(reaisStr, 10);\n  const centavos = parseInt(centavosStr, 10);\n  if (reais === 0 && centavos === 0) return 'zero reais';\n  let partes = [];\n  if (reais > 0) partes.push(reais + (reais === 1 ? ' real' : ' reais'));\n  if (centavos > 0) partes.push(centavos + (centavos === 1 ? ' centavo' : ' centavos'));\n  return partes.join(' e ');\n}\nconst valorPorExtenso = formatarValorParaTTS(valorRestante);\n\nreturn {\n  external_call_id: body.external_call_id,\n  ordem_servico_id: body.ordem_servico_id,\n  cliente_nome: body.cliente?.nome,\n  cliente_telefone: body.cliente?.telefone ? body.cliente.telefone.replace(/^\\+55/, '').replace(/^\\+/, '') : '',\n  item_reparado: body.item_reparado,\n  valor_orcamento: body.valor_orcamento,\n  valor_pago: body.valor_pago,\n  valor_restante: valorRestante,\n  valor_restante_extenso: valorPorExtenso,\n  defeito_relatado: body.defeito_relatado,\n  callback_url: body.callback_url\n};"
       },
       "id": "prepare-data-code",
       "name": "2. Code: Prepara Dados",
@@ -36,7 +36,7 @@
         "operation": "sendVoiceBlast",
         "callerId": "YOUR_NVOIP_CALLER_ID",
         "destination": "={{ $json.cliente_telefone }}",
-        "audioContent": "=Olá, {{ $json.cliente_nome }}! Seu {{ $json.item_reparado }} está pronto para retirada. O valor restante a pagar é de R$ {{ $json.valor_restante }}."
+        "audioContent": "=Olá, {{ $json.cliente_nome }}! Seu {{ $json.item_reparado }} está pronto para retirada. O valor restante a pagar é de {{ $json.valor_restante_extenso }}."
       },
       "id": "nvoip-native-node",
       "name": "3. NVoIP: Inicia Chamada",
@@ -50,7 +50,7 @@
     {
       "parameters": {
         "promptType": "define",
-        "text": "=Você é a assistente virtual inteligente da Sapataria Souza, uma sapataria localizada no bairro Cavalhada de Porto Alegre.\nSua missão é ser extremamente educada, objetiva e falar em português brasileiro natural (pt-BR).\n\nDADOS DA LIGAÇÃO:\n- Cliente: {{ $node[\"2. Code: Prepara Dados\"].json.cliente_nome }}\n- Aparelho/Sapato: {{ $node[\"2. Code: Prepara Dados\"].json.item_reparado }}\n- Valor a pagar: R$ {{ $node[\"2. Code: Prepara Dados\"].json.valor_restante }}\n\nDADOS DA LOJA (Se o cliente perguntar):\n- Endereço: Otto Niemeyer, 3210 - Cavalhada, Porto Alegre - RS.\n- Horário de Funcionamento: Segunda a Sexta-feira, das 09:00 às 18:00 (Não abrimos aos sábados e domingos).\n\nDIRETRIZES DE COMPORTAMENTO:\n1. Inicie a chamada cumprimentando o cliente pelo nome e informando que o item dele está reparado e pronto para retirada.\n2. Se o cliente perguntar sobre a localização ou horário, responda de forma clara usando estritamente os DADOS DA LOJA informados acima.\n3. Mantenha as respostas curtas e naturais, adequadas para uma conversa telefônica (evite textos longos ou listas complexas).\n4. Assim que o cliente confirmar que entendeu ou se despedir, finalize a chamada de forma educada e encerre a conexão.",
+        "text": "=Você é a assistente virtual inteligente da Sapataria Souza, uma sapataria localizada no bairro Cavalhada de Porto Alegre.\nSua missão é ser extremamente educada, objetiva e falar em português brasileiro natural (pt-BR).\n\nDADOS DA LIGAÇÃO:\n- Cliente: {{ $node[\"2. Code: Prepara Dados\"].json.cliente_nome }}\n- Aparelho/Sapato: {{ $node[\"2. Code: Prepara Dados\"].json.item_reparado }}\n- Valor a pagar: {{ $node[\"2. Code: Prepara Dados\"].json.valor_restante }} reais\n\nDADOS DA LOJA (Se o cliente perguntar):\n- Endereço: Otto Niemeyer, 3210 - Cavalhada, Porto Alegre - RS.\n- Horário de Funcionamento: Segunda a Sexta-feira, das 09:00 às 18:00 (Não abrimos aos sábados e domingos).\n\nDIRETRIZES DE COMPORTAMENTO:\n1. Inicie a chamada cumprimentando o cliente pelo nome e informando que o item dele está reparado e pronto para retirada.\n2. Se o cliente perguntar sobre a localização ou horário, responda de forma clara usando estritamente os DADOS DA LOJA informados acima.\n3. Mantenha as respostas curtas e naturais, adequadas para uma conversa telefônica (evite textos longos ou listas complexas).\n4. Assim que o cliente confirmar que entendeu ou se despedir, finalize a chamada de forma educada e encerre a conexão.",
         "options": {}
       },
       "id": "ai-agent-conversational",

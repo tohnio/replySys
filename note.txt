@@ -1,1 +1,11 @@
 php artisan replysys:test-call 51985408560 --nome="Cliente Teste" --item="Sapato Derby" --orcamento=150.00 --pago=50.00
+
+docker exec -it replysys_app php artisan replysys:test-call
+
+docker exec -it replysys_app php artisan queue:work
+
+docker compose exec app curl -I http://n8n:5678/healthz
+
+docker exec -it replysys_app php artisan config:clear
+
+node scripts/ask-openrouter-webhook.js --prod "O webhook esta funcionando?"

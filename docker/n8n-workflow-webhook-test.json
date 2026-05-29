@@ -1,0 +1,140 @@
+{
+  "name": "n8n-workflow-webhook-test",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "replysys-openrouter-question",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-openrouter-question",
+      "name": "1. Webhook: Recebe Pergunta",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        120,
+        220
+      ],
+      "webhookId": "0f203bc4-4938-4c18-a5cc-9612ec04eb4f"
+    },
+    {
+      "parameters": {
+        "jsCode": "const query = $json.query || {};\nconst headers = $json.headers || {};\nconst pergunta = String(query.q || query.pergunta || '').trim();\n\nif (!pergunta) {\n  throw new Error('Informe a pergunta usando o parametro de URL q. Exemplo: ?q=Qual%20e%20o%20status%3F');\n}\n\nreturn {\n  pergunta,\n  ambiente: query.env || query.ambiente || 'webhook',\n  modelo: 'openai/gpt-oss-20b:free',\n  host: headers.host || '',\n  recebido_em: new Date().toISOString()\n};"
+      },
+      "id": "code-normaliza-pergunta",
+      "name": "2. Code: Normaliza Pergunta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        360,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.pergunta }}",
+        "options": {
+          "systemMessage": "Voce e um assistente de teste de webhook da ReplySys. Responda em portugues brasileiro, de forma objetiva e util. Se a pergunta for sobre o proprio teste, explique que o webhook recebeu o parametro q e respondeu usando o modelo OpenRouter configurado no n8n."
+        }
+      },
+      "id": "ai-agent-responde-pergunta",
+      "name": "3. AI Agent: Responde Pergunta",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1,
+      "position": [
+        600,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-oss-20b:free",
+        "options": {
+          "temperature": 0.2
+        }
+      },
+      "id": "openrouter-chat-model-webhook-test",
+      "name": "4. OpenRouter Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        620,
+        460
+      ],
+      "credentials": {
+        "openRouterApi": {
+          "id": "REPLACE_WITH_OPENROUTER_CREDENTIAL_ID",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const entrada = $node['2. Code: Normaliza Pergunta'].json;\nconst resposta = $json.output || $json.text || $json.response || '';\n\nreturn {\n  pergunta: entrada.pergunta,\n  resposta,\n  modelo: entrada.modelo,\n  ambiente: entrada.ambiente,\n  recebido_em: entrada.recebido_em,\n  respondido_em: new Date().toISOString()\n};"
+      },
+      "id": "code-formata-resposta",
+      "name": "5. Code: Formata Resposta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        920,
+        220
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "1. Webhook: Recebe Pergunta": {
+      "main": [
+        [
+          {
+            "node": "2. Code: Normaliza Pergunta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. Code: Normaliza Pergunta": {
+      "main": [
+        [
+          {
+            "node": "3. AI Agent: Responde Pergunta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3. AI Agent: Responde Pergunta": {
+      "main": [
+        [
+          {
+            "node": "5. Code: Formata Resposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4. OpenRouter Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "3. AI Agent: Responde Pergunta",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "tags": []
+}

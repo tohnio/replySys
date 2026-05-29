@@ -15,7 +15,7 @@ class WebhookController extends Controller
     #[OA\Post(
         path: "/webhook/n8n",
         summary: "Recebe atualizações de chamada do n8n",
-        description: "Webhook chamado pelo fluxo do n8n para informar o resultado da ligação.",
+        description: "Webhook chamado pelo fluxo do n8n para informar o resultado ou logs de diálogo da ligação.",
         tags: ["Webhook"],
         responses: [
             new OA\Response(response: 200, description: "Processado com sucesso")
@@ -45,9 +45,10 @@ class WebhookController extends Controller
             return response()->json(['status' => 'error', 'message' => 'OrdemServico not found or OrdemServico ID missing'], 404);
         }
 
-        $status_ligacao = $payload['status_ligacao'] ?? 'falhou';
-        $duracao = $payload['duracao'] ?? 0;
+        $status_ligacao = $payload['status_ligacao'] ?? null;
+        $duracao = $payload['duracao'] ?? null;
         $transcricao_ia = $payload['transcricao_ia'] ?? null;
+        $append = $payload['append'] ?? false;
 
         if (!$historico && $os) {
             if ($externalCallId) {
@@ -60,22 +61,37 @@ class WebhookController extends Controller
         }
         
         if ($historico) {
-            $historico->update([
-                'status_ligacao' => $status_ligacao,
-                'duracao' => $duracao,
-                'transcricao_ia' => $transcricao_ia,
+            $updateData = [
                 'data_ligacao' => now()
-            ]);
+            ];
+
+            if ($status_ligacao !== null) {
+                $updateData['status_ligacao'] = $status_ligacao;
+            }
+            if ($duracao !== null) {
+                $updateData['duracao'] = $duracao;
+            }
+            if ($transcricao_ia !== null) {
+                if ($append) {
+                    $existing = $historico->transcricao_ia;
+                    $updateData['transcricao_ia'] = $existing ? ($existing . "\n" . $transcricao_ia) : $transcricao_ia;
+                } else {
+                    $updateData['transcricao_ia'] = $transcricao_ia;
+                }
+            }
+            
             // Garante que o external_call_id está salvo caso tenha caído no fallback
             if ($externalCallId) {
-                $historico->update(['external_call_id' => $externalCallId]);
+                $updateData['external_call_id'] = $externalCallId;
             }
+            
+            $historico->update($updateData);
         } else {
             // Fallback caso não exista pendente (cria um novo)
             $historico = $os->historicoLigacoes()->create([
                 'external_call_id' => $externalCallId,
-                'status_ligacao' => $status_ligacao,
-                'duracao' => $duracao,
+                'status_ligacao' => $status_ligacao ?? 'pendente',
+                'duracao' => $duracao ?? 0,
                 'transcricao_ia' => $transcricao_ia,
                 'data_ligacao' => now()
             ]);
@@ -101,6 +117,100 @@ class WebhookController extends Controller
         }
 
         return response()->json(['status' => 'success']);
+    }
+
+    #[OA\Get(
+        path: "/webhook/n8n/call-details/{externalCallId}",
+        summary: "Busca detalhes do cliente e da OS para alimentar o n8n em tempo real",
+        description: "Retorna o nome do cliente, item consertado e valor restante de orçamento pelo UUID do canal de chamada.",
+        tags: ["Webhook"],
+        parameters: [
+            new OA\Parameter(
+                name: "externalCallId",
+                in: "path",
+                required: true,
+                description: "UUID de controle da chamada gerado no Laravel",
+                schema: new OA\Schema(type: "string")
+            )
+        ],
+        responses: [
+            new OA\Response(response: 200, description: "Dados retornados com sucesso"),
+            new OA\Response(response: 404, description: "Chamada ou OS não localizada")
+        ]
+    )]
+    public function getCallDetails($externalCallId)
+    {
+        $historico = \App\Models\HistoricoLigacao::where('external_call_id', $externalCallId)->first();
+        
+        if (!$historico) {
+            return response()->json(['status' => 'error', 'message' => 'Histórico de ligação não encontrado para o ID fornecido.'], 404);
+        }
+
+        $os = $historico->ordemServico;
+        if (!$os) {
+            return response()->json(['status' => 'error', 'message' => 'Ordem de serviço associada não encontrada.'], 404);
+        }
+
+        $cliente = $os->cliente;
+        $valorRestante = (float) ($os->valor_orcamento - $os->valor_pago);
+
+        return response()->json([
+            'cliente_nome' => $cliente->nome ?? 'Cliente',
+            'item_reparado' => $os->descricao_item ?? $os->modelo,
+            'valor_restante' => number_format($valorRestante, 2, '.', ''),
+        ]);
+    }
+
+    #[OA\Get(
+        path: "/webhook/n8n/client-details/{phone}",
+        summary: "Busca detalhes do cliente e da OS pelo número de telefone",
+        description: "Retorna o nome do cliente, item consertado e valor restante de orçamento pelo número de telefone do cliente.",
+        tags: ["Webhook"],
+        parameters: [
+            new OA\Parameter(
+                name: "phone",
+                in: "path",
+                required: true,
+                description: "Telefone do cliente",
+                schema: new OA\Schema(type: "string")
+            )
+        ],
+        responses: [
+            new OA\Response(response: 200, description: "Dados retornados com sucesso"),
+            new OA\Response(response: 404, description: "Cliente ou OS não localizado")
+        ]
+    )]
+    public function getClientDetails($phone)
+    {
+        $cleanedPhone = preg_replace('/\D/', '', $phone);
+        
+        if (str_starts_with($cleanedPhone, '55')) {
+            $cleanedPhone = substr($cleanedPhone, 2);
+        }
+        
+        $cliente = \App\Models\Cliente::where('telefone', 'like', "%{$cleanedPhone}%")->first();
+        
+        if (!$cliente) {
+            return response()->json(['status' => 'error', 'message' => 'Cliente não encontrado para o telefone fornecido.'], 404);
+        }
+        
+        $os = $cliente->ordensServico()->whereIn('status', ['RECEBIDO', 'EM_REPARO', 'AGUARDANDO_PECA', 'REPARADO'])->latest()->first();
+        
+        if (!$os) {
+            $os = $cliente->ordensServico()->latest()->first();
+        }
+        
+        if (!$os) {
+            return response()->json(['status' => 'error', 'message' => 'Nenhuma ordem de serviço encontrada.'], 404);
+        }
+        
+        $valorRestante = (float) ($os->valor_orcamento - $os->valor_pago);
+        
+        return response()->json([
+            'cliente_nome' => $cliente->nome ?? 'Cliente',
+            'item_reparado' => $os->descricao_item ?? $os->modelo,
+            'valor_restante' => number_format($valorRestante, 2, '.', ''),
+        ]);
     }
 
     /**
