@@ -327,72 +327,66 @@
             <form id="os-form" onsubmit="submitOsForm(event)" class="p-6 overflow-y-auto space-y-4">
                 <input type="hidden" id="os-id" name="id">
                 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <!-- Cliente Nome -->
-                    <div class="flex flex-col gap-1">
-                        <label for="os-nome" class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Nome do Cliente <span class="text-rose-500">*</span></label>
-                        <input type="text" id="os-nome" required placeholder="Nome completo" class="bg-slate-800/80 border border-white/10 rounded-xl px-4 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all text-sm">
-                    </div>
-                    
-                    <!-- Cliente Telefone -->
-                    <div class="flex flex-col gap-1">
-                        <label for="os-telefone" class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Telefone</label>
-                        <input type="text" id="os-telefone" placeholder="(XX) XXXXX-XXXX" class="bg-slate-800/80 border border-white/10 rounded-xl px-4 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all text-sm">
-                    </div>
-                </div>
-                
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <!-- Modelo -->
-                    <div class="flex flex-col gap-1">
-                        <label for="os-modelo" class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Modelo do Aparelho</label>
-                        <input type="text" id="os-modelo" placeholder="Ex: iPhone 13 Pro" class="bg-slate-800/80 border border-white/10 rounded-xl px-4 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all text-sm">
-                    </div>
-                    
-                    <!-- Previsão de Entrega (Pronto para) -->
-                    <div class="flex flex-col gap-1">
-                        <label for="os-previsao" class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Previsão de Entrega</label>
-                        <select id="os-previsao" class="bg-slate-800/80 border border-white/10 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all text-sm cursor-pointer">
-                            <!-- Populated dynamically via JS -->
-                        </select>
-                    </div>
-                </div>
-                
-                <!-- Defeito Relatado -->
+                <!-- Modelo -->
                 <div class="flex flex-col gap-1">
-                    <label for="os-defeito" class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Descrição do Defeito / Reparo</label>
-                    <textarea id="os-defeito" rows="3" placeholder="Descreva o defeito relatado..." class="bg-slate-800/80 border border-white/10 rounded-xl px-4 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all resize-none text-sm"></textarea>
+                    <label for="os-modelo" class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Modelo</label>
+                    <input type="text" id="os-modelo" placeholder="Ex: iPhone 13 Pro" class="bg-slate-800/80 border border-white/10 rounded-xl px-4 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all text-sm">
                 </div>
                 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <!-- Valor Orçamento -->
-                    <div class="flex flex-col gap-1">
-                        <label for="os-valor" class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Valor Total (R$)</label>
-                        <input type="text" id="os-valor" placeholder="0,00" class="bg-slate-800/80 border border-white/10 rounded-xl px-4 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all text-sm">
-                    </div>
-                    
-                    <!-- Status de Pagamento -->
-                    <div class="flex flex-col gap-1">
-                        <label class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Situação do Pagamento</label>
-                        <div class="flex items-center gap-4 py-2">
-                            <label class="flex items-center gap-1.5 cursor-pointer text-xs text-slate-300 hover:text-white transition-colors">
-                                <input type="radio" name="status_pagamento" value="pendente" checked onchange="toggleValorPagoField()" class="accent-indigo-500">
-                                Pendente
-                            </label>
-                            <label class="flex items-center gap-1.5 cursor-pointer text-xs text-slate-300 hover:text-white transition-colors">
-                                <input type="radio" name="status_pagamento" value="parcial" onchange="toggleValorPagoField()" class="accent-indigo-500">
-                                Parcial
-                            </label>
-                            <label class="flex items-center gap-1.5 cursor-pointer text-xs text-slate-300 hover:text-white transition-colors">
-                                <input type="radio" name="status_pagamento" value="total" onchange="toggleValorPagoField()" class="accent-indigo-500">
-                                Total
-                            </label>
-                        </div>
+                <!-- Descrição do Reparo -->
+                <div class="flex flex-col gap-1">
+                    <label for="os-defeito" class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Descrição do Reparo</label>
+                    <textarea id="os-defeito" rows="3" placeholder="Descreva o reparo..." class="bg-slate-800/80 border border-white/10 rounded-xl px-4 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all resize-none text-sm"></textarea>
+                </div>
+                
+                <!-- Pronto para -->
+                <div class="flex flex-col gap-1">
+                    <label for="os-previsao" class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Pronto para</label>
+                    <select id="os-previsao" class="bg-slate-800/80 border border-white/10 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all text-sm cursor-pointer">
+                        <!-- Populated dynamically via JS -->
+                    </select>
+                </div>
+                
+                <!-- Nome do Cliente -->
+                <div class="flex flex-col gap-1">
+                    <label for="os-nome" class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Nome do Cliente <span class="text-rose-500">*</span></label>
+                    <input type="text" id="os-nome" required placeholder="Nome completo" class="bg-slate-800/80 border border-white/10 rounded-xl px-4 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all text-sm">
+                </div>
+                
+                <!-- Telefone -->
+                <div class="flex flex-col gap-1">
+                    <label for="os-telefone" class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Telefone</label>
+                    <input type="text" id="os-telefone" placeholder="(XX) XXXXX-XXXX" class="bg-slate-800/80 border border-white/10 rounded-xl px-4 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all text-sm">
+                </div>
+                
+                <!-- Valor Total -->
+                <div class="flex flex-col gap-1">
+                    <label for="os-valor" class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Valor Total (R$)</label>
+                    <input type="text" id="os-valor" placeholder="0,00" class="bg-slate-800/80 border border-white/10 rounded-xl px-4 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all text-sm">
+                </div>
+                
+                <!-- Situação do Pagamento -->
+                <div class="flex flex-col gap-1">
+                    <label class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Situação do Pagamento</label>
+                    <div class="flex items-center gap-4 py-2">
+                        <label class="flex items-center gap-1.5 cursor-pointer text-xs text-slate-300 hover:text-white transition-colors">
+                            <input type="radio" name="status_pagamento" value="pendente" checked onchange="toggleValorPagoField()" class="accent-indigo-500">
+                            Pendente
+                        </label>
+                        <label class="flex items-center gap-1.5 cursor-pointer text-xs text-slate-300 hover:text-white transition-colors">
+                            <input type="radio" name="status_pagamento" value="parcial" onchange="toggleValorPagoField()" class="accent-indigo-500">
+                            Parcial
+                        </label>
+                        <label class="flex items-center gap-1.5 cursor-pointer text-xs text-slate-300 hover:text-white transition-colors">
+                            <input type="radio" name="status_pagamento" value="total" onchange="toggleValorPagoField()" class="accent-indigo-500">
+                            Total
+                        </label>
                     </div>
                 </div>
                 
                 <!-- Valor Pago (Adiantamento) -->
                 <div id="valor-pago-container" class="flex flex-col gap-1 hidden">
-                    <label for="os-valor-pago" class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Valor Pago (Adiantado / Sinal)</label>
+                    <label for="os-valor-pago" class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Valor Pago (Adiantado)</label>
                     <input type="text" id="os-valor-pago" placeholder="0,00" class="bg-slate-800/80 border border-white/10 rounded-xl px-4 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all text-sm">
                 </div>
                 

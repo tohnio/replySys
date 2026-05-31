@@ -188,7 +188,29 @@ class WebhookController extends Controller
             $cleanedPhone = substr($cleanedPhone, 2);
         }
         
-        $cliente = \App\Models\Cliente::where('telefone', 'like', "%{$cleanedPhone}%")->first();
+        $cliente = null;
+        if (!empty($cleanedPhone)) {
+            $alternatives = [$cleanedPhone];
+            if (strlen($cleanedPhone) === 10) {
+                $ddd = substr($cleanedPhone, 0, 2);
+                $numero = substr($cleanedPhone, 2);
+                $alternatives[] = $ddd . '9' . $numero;
+            } elseif (strlen($cleanedPhone) === 11) {
+                $ddd = substr($cleanedPhone, 0, 2);
+                $numero = substr($cleanedPhone, 2);
+                if (str_starts_with($numero, '9')) {
+                    $alternatives[] = $ddd . substr($numero, 1);
+                }
+            }
+            
+            $query = \App\Models\Cliente::query();
+            $query->where(function($q) use ($alternatives) {
+                foreach ($alternatives as $alt) {
+                    $q->orWhereRaw("REPLACE(REPLACE(REPLACE(REPLACE(telefone, '(', ''), ')', ''), '-', ''), ' ', '') like ?", ["%{$alt}%"]);
+                }
+            });
+            $cliente = $query->first();
+        }
         
         if (!$cliente) {
             return response()->json(['status' => 'error', 'message' => 'Cliente não encontrado para o telefone fornecido.'], 404);

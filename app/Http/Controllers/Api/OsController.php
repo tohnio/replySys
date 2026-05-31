@@ -120,8 +120,36 @@ class OsController extends Controller
 
         $telefone = $data['telefone'] ?? '';
         if (!empty($telefone)) {
-            $cliente = \App\Models\Cliente::where('telefone', $telefone)->first();
-            if (!$cliente) {
+            $telefoneLimpo = preg_replace('/\D/', '', $telefone);
+            
+            // Lógica flexível do nono dígito (9)
+            $alternatives = [$telefoneLimpo];
+            if (strlen($telefoneLimpo) === 10) {
+                $ddd = substr($telefoneLimpo, 0, 2);
+                $numero = substr($telefoneLimpo, 2);
+                $alternatives[] = $ddd . '9' . $numero;
+            } elseif (strlen($telefoneLimpo) === 11) {
+                $ddd = substr($telefoneLimpo, 0, 2);
+                $numero = substr($telefoneLimpo, 2);
+                if (str_starts_with($numero, '9')) {
+                    $alternatives[] = $ddd . substr($numero, 1);
+                }
+            }
+            
+            $query = \App\Models\Cliente::query();
+            $query->where(function($q) use ($telefone, $alternatives) {
+                $q->where('telefone', $telefone);
+                foreach ($alternatives as $alt) {
+                    $q->orWhereRaw("REPLACE(REPLACE(REPLACE(REPLACE(telefone, '(', ''), ')', ''), '-', ''), ' ', '') like ?", ["%{$alt}%"]);
+                }
+            });
+            $cliente = $query->first();
+
+            if ($cliente) {
+                // Atualiza o nome do cliente com o informado na requisição
+                $cliente->nome = $data['nome'];
+                $cliente->save();
+            } else {
                 $cliente = \App\Models\Cliente::create([
                     'nome' => $data['nome'],
                     'telefone' => $telefone

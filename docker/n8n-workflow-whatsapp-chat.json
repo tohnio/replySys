@@ -45,7 +45,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"number\": \"{{ $json.cliente_telefone }}\",\n  \"text\": \"Olá, {{ $json.cliente_nome }}! Aqui é da Sapataria Souza.\\n\\nPassando para avisar que o seu {{ $json.item_reparado }} já está pronto!\\nO valor restante a ser pago é de R$ {{ $json.valor_restante }}.\\n\\nVocê pode vir retirar de segunda a sexta-feira, das 09h às 18h na Av. Otto Niemeyer, 3210 - Cavalhada, Porto Alegre.\\n\\nQualquer dúvida estamos à disposição!\"\n}"
+        "jsonBody": "={\n  \"number\": \"{{ $json.cliente_telefone }}\",\n  \"text\": \"Olá, {{ $json.cliente_nome }}! Aqui é da Sapataria Souza.\\n\\nPassando para avisar que o seu {{ $json.item_reparado }} já está pronto!\\n\\nVocê pode vir retirar de segunda a sexta-feira, das 09h às 18h.\\n\\nQualquer dúvida estamos à disposição!\"\n}"
       },
       "id": "ea80b80d-1567-45d4-ad19-5d3a796ed72c",
       "name": "3. Evolution API: Envia WhatsApp",
@@ -63,15 +63,19 @@
           "options": {
             "caseSensitive": true,
             "leftValue": "",
-            "typeValidation": "none",
-            "version": 1
+            "typeValidation": "loose",
+            "version": 2
           },
           "conditions": [
             {
               "id": "check-error",
-              "leftValue": "={{ $json.error ? $json.error : '' }}",
+              "leftValue": "={{ $json.error ? (typeof $json.error === 'object' ? ($json.error.message || JSON.stringify($json.error)) : String($json.error)) : '' }}",
               "rightValue": "",
-              "operator": "isEmpty"
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
             }
           ],
           "combinator": "and"
