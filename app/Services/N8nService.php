@@ -26,6 +26,13 @@ class N8nService
             return false;
         }
 
+        // Verifica se já existe uma notificação concluída para esta OS
+        $historico = $os->historicoLigacoes()->first();
+        if ($historico && in_array($historico->status_ligacao, ['whatsapp', 'atendida'])) {
+            Log::info("N8nService: OS {$os->id} já possui notificação concluída ({$historico->status_ligacao}). Cancelando chamada.");
+            return false;
+        }
+
         $webhookUrl = config('services.n8n.webhook_url');
 
         // Formata o telefone para o padrão E.164 (+55...) para n8n/NVoIP
@@ -34,12 +41,28 @@ class N8nService
         // Gera um ID único para rastreamento da chamada
         $externalCallId = (string) Str::uuid();
 
-        // Registra a tentativa no histórico (status: pendente)
-        $historico = $os->historicoLigacoes()->create([
-            'external_call_id' => $externalCallId,
-            'status_ligacao' => 'pendente',
-            'data_ligacao' => now(),
-        ]);
+        // Registra/atualiza a tentativa no histórico (status: pendente)
+        if ($historico) {
+            $isVoiceRetry = in_array($historico->status_ligacao, ['pendente', 'caixa_postal', 'falhou']);
+            $novaTentativa = $isVoiceRetry ? ($historico->tentativas + 1) : 1;
+
+            $historico->update([
+                'external_call_id' => $externalCallId,
+                'status_ligacao' => 'pendente',
+                'data_ligacao' => now(),
+                'duracao' => null,
+                'transcricao_ia' => null,
+                'proxima_tentativa' => null,
+                'tentativas' => $novaTentativa,
+            ]);
+        } else {
+            $historico = $os->historicoLigacoes()->create([
+                'external_call_id' => $externalCallId,
+                'status_ligacao' => 'pendente',
+                'data_ligacao' => now(),
+                'tentativas' => 1,
+            ]);
+        }
 
         if (empty($webhookUrl)) {
             Log::warning("N8nService: N8N_WEBHOOK_URL não configurado no .env. Simulando chamada no ambiente de desenvolvimento.");
@@ -102,6 +125,13 @@ class N8nService
             return false;
         }
 
+        // Verifica se já existe uma notificação concluída para esta OS
+        $historico = $os->historicoLigacoes()->first();
+        if ($historico && in_array($historico->status_ligacao, ['whatsapp', 'atendida'])) {
+            Log::info("N8nService: OS {$os->id} já possui uma notificação concluída ({$historico->status_ligacao}).");
+            return false;
+        }
+
         $webhookUrl = config('services.n8n.whatsapp_webhook_url');
 
         // Formata o telefone para o padrão E.164 (+55...) para n8n/NVoIP
@@ -110,12 +140,25 @@ class N8nService
         // Gera um ID único para rastreamento da chamada/fluxo de conversa
         $externalCallId = (string) Str::uuid();
 
-        // Registra a tentativa no histórico (status: pendente)
-        $historico = $os->historicoLigacoes()->create([
-            'external_call_id' => $externalCallId,
-            'status_ligacao' => 'pendente',
-            'data_ligacao' => now(),
-        ]);
+        // Registra a tentativa no histórico (status: chamada por whatsapp pendente)
+        if ($historico) {
+            $historico->update([
+                'external_call_id' => $externalCallId,
+                'status_ligacao' => 'chamada por whatsapp pendente',
+                'data_ligacao' => now(),
+                'duracao' => null,
+                'transcricao_ia' => null,
+                'proxima_tentativa' => null,
+                'tentativas' => 1,
+            ]);
+        } else {
+            $historico = $os->historicoLigacoes()->create([
+                'external_call_id' => $externalCallId,
+                'status_ligacao' => 'chamada por whatsapp pendente',
+                'data_ligacao' => now(),
+                'tentativas' => 1,
+            ]);
+        }
 
         if (empty($webhookUrl)) {
             Log::warning("N8nService: N8N_WHATSAPP_WEBHOOK_URL não configurado no .env. Simulando WhatsApp no desenvolvimento.");
@@ -148,14 +191,14 @@ class N8nService
                 Log::error("N8nService: Erro ao disparar webhook de WhatsApp do n8n para OS {$os->id}. Status: " . $response->status() . " | Resposta: " . $response->body());
                 
                 $historico->update([
-                    'status_ligacao' => 'falhou'
+                    'status_ligacao' => 'erro ao executar chamada'
                 ]);
                 return false;
             }
         } catch (\Exception $e) {
             Log::error("N8nService: Exceção ao chamar n8n (WhatsApp) para OS {$os->id}: " . $e->getMessage());
             $historico->update([
-                'status_ligacao' => 'falhou'
+                'status_ligacao' => 'erro ao executar chamada'
             ]);
             return false;
         }

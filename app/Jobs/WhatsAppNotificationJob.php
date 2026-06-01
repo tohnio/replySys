@@ -27,6 +27,10 @@ class WhatsAppNotificationJob implements ShouldQueue
      */
     public function handle(\App\Services\N8nService $n8nService): void
     {
-        $n8nService->sendWhatsApp($this->os);
+        $success = $n8nService->sendWhatsApp($this->os);
+        if (!$success) {
+            \Illuminate\Support\Facades\Log::info("WhatsAppNotificationJob: Falha ao enviar WhatsApp para OS {$this->os->id}. Iniciando fallback com ligação telefônica.");
+            \App\Jobs\CallCustomerJob::dispatch($this->os);
+        }
     }
 }

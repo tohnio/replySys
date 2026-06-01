@@ -55,8 +55,8 @@ class WebhookController extends Controller
                 $historico = $os->historicoLigacoes()->where('external_call_id', $externalCallId)->first();
             }
             if (!$historico) {
-                // Tenta encontrar a última tentativa "pendente" para atualizar (fallback)
-                $historico = $os->historicoLigacoes()->where('status_ligacao', 'pendente')->latest()->first();
+                // Tenta encontrar a única tentativa existente para atualizar (fallback)
+                $historico = $os->historicoLigacoes()->first();
             }
         }
         
@@ -87,26 +87,29 @@ class WebhookController extends Controller
             
             $historico->update($updateData);
         } else {
-            // Fallback caso não exista pendente (cria um novo)
+            // Fallback caso não exista (cria o único histórico da OS)
             $historico = $os->historicoLigacoes()->create([
                 'external_call_id' => $externalCallId,
                 'status_ligacao' => $status_ligacao ?? 'pendente',
                 'duracao' => $duracao ?? 0,
                 'transcricao_ia' => $transcricao_ia,
-                'data_ligacao' => now()
+                'data_ligacao' => now(),
+                'tentativas' => 1
             ]);
         }
 
         // Se não atendeu e a OS ainda está REPARADO, agenda retry (até 4 chamadas no total)
         if ($status_ligacao === 'caixa_postal' && $os->status === 'REPARADO') {
-            $tentativas = $os->historicoLigacoes()->count();
+            $tentativas = $historico ? $historico->tentativas : 1;
             
             if ($tentativas < 4) {
                 $proxima = $this->calcularProximoHorarioLigacao(now());
                 
-                $historico->update([
-                    'proxima_tentativa' => $proxima
-                ]);
+                if ($historico) {
+                    $historico->update([
+                        'proxima_tentativa' => $proxima
+                    ]);
+                }
 
                 CallCustomerJob::dispatch($os)->delay($proxima);
                 
@@ -232,6 +235,135 @@ class WebhookController extends Controller
             'cliente_nome' => $cliente->nome ?? 'Cliente',
             'item_reparado' => $os->descricao_item ?? $os->modelo,
             'valor_restante' => number_format($valorRestante, 2, '.', ''),
+        ]);
+    }
+
+    #[OA\Post(
+        path: "/webhook/n8n/whatsapp-reply",
+        summary: "Processa resposta do cliente no WhatsApp e gera retorno adequado",
+        description: "Analisa a mensagem do WhatsApp do cliente, valida limites de resposta (máx 2) e retorna se deve responder e qual o texto.",
+        tags: ["Webhook"],
+        responses: [
+            new OA\Response(response: 200, description: "Sucesso com indicação de resposta")
+        ]
+    )]
+    public function handleWhatsAppReply(Request $request)
+    {
+        $phone = $request->input('phone');
+        $text = $request->input('text', '');
+        $messageId = $request->input('message_id');
+
+        if (empty($phone)) {
+            return response()->json(['should_reply' => false, 'message' => 'Phone is empty']);
+        }
+
+        $cleanedPhone = preg_replace('/\D/', '', $phone);
+        if (str_starts_with($cleanedPhone, '55')) {
+            $cleanedPhone = substr($cleanedPhone, 2);
+        }
+
+        $cliente = null;
+        if (!empty($cleanedPhone)) {
+            $alternatives = [$cleanedPhone];
+            if (strlen($cleanedPhone) === 10) {
+                $ddd = substr($cleanedPhone, 0, 2);
+                $numero = substr($cleanedPhone, 2);
+                $alternatives[] = $ddd . '9' . $numero;
+            } elseif (strlen($cleanedPhone) === 11) {
+                $ddd = substr($cleanedPhone, 0, 2);
+                $numero = substr($cleanedPhone, 2);
+                if (str_starts_with($numero, '9')) {
+                    $alternatives[] = $ddd . substr($numero, 1);
+                }
+            }
+
+            $query = \App\Models\Cliente::query();
+            $query->where(function($q) use ($alternatives) {
+                foreach ($alternatives as $alt) {
+                    $q->orWhereRaw("REPLACE(REPLACE(REPLACE(REPLACE(telefone, '(', ''), ')', ''), '-', ''), ' ', '') like ?", ["%{$alt}%"]);
+                }
+            });
+            $cliente = $query->first();
+        }
+
+        if (!$cliente) {
+            return response()->json(['should_reply' => false, 'message' => 'Cliente não encontrado']);
+        }
+
+        $os = $cliente->ordensServico()->whereIn('status', ['RECEBIDO', 'EM_REPARO', 'AGUARDANDO_PECA', 'REPARADO'])->latest()->first();
+        if (!$os) {
+            $os = $cliente->ordensServico()->latest()->first();
+        }
+
+        if (!$os) {
+            return response()->json(['should_reply' => false, 'message' => 'Ordem de serviço não encontrada']);
+        }
+
+        $historico = $os->historicoLigacoes()->first();
+        if (!$historico) {
+            $historico = $os->historicoLigacoes()->create([
+                'status_ligacao' => 'whatsapp',
+                'tentativas' => 1,
+                'whatsapp_reply_count' => 0,
+            ]);
+        }
+
+        if ($messageId && $historico->last_whatsapp_message_id === $messageId) {
+            return response()->json(['should_reply' => false, 'message' => 'Mensagem duplicada (já processada)']);
+        }
+
+        if ($historico->whatsapp_reply_count >= 2) {
+            return response()->json(['should_reply' => false, 'message' => 'Limite de 2 respostas atingido']);
+        }
+
+        $cleanText = mb_strtolower(trim($text));
+
+        $matchesObrigado = false;
+        $matchesHorario = false;
+        $matchesEndereco = false;
+
+        if (preg_match('/(obrigado|obrigada|agradeco|agradeço|valeu)/u', $cleanText)) {
+            $matchesObrigado = true;
+        }
+
+        if (preg_match('/(horario|horário|atendimento|funcionamento|funciona|aberto|abre|fecha|hora|meio dia|meio-dia)/u', $cleanText)) {
+            $matchesHorario = true;
+        }
+
+        if (preg_match('/(endereco|endereço|onde|localizacao|localização|local|rua|bairro)/u', $cleanText)) {
+            $matchesEndereco = true;
+        }
+
+        $reply = '';
+        if ($matchesHorario || $matchesEndereco) {
+            $replies = [];
+            if ($matchesHorario) {
+                $replies[] = "Nosso horário de atendimento é de segunda a sexta-feira, das 09:00 às 18:00 (não abrimos aos sábados e domingos).";
+            }
+            if ($matchesEndereco) {
+                $replies[] = "Nosso endereço é Avenida Otto Niemeyer, 3210 - Cavalhada, Porto Alegre - RS.";
+            }
+            $reply = implode("\n", $replies);
+        } elseif ($matchesObrigado) {
+            $reply = "De nada! Ficamos no aguardo da sua visita. Se precisar de mais alguma coisa, estamos à disposição!";
+        } else {
+            $reply = "Desculpe, não sei dizer no momento.";
+        }
+
+        $historico->whatsapp_reply_count = ($historico->whatsapp_reply_count ?? 0) + 1;
+        $historico->last_whatsapp_message_id = $messageId;
+        $historico->status_ligacao = 'whatsapp';
+
+        $timestamp = now()->toDateTimeString();
+        $newLog = "[{$timestamp}] User: {$text}\n[{$timestamp}] System: {$reply}";
+        $existing = $historico->transcricao_ia;
+        $historico->transcricao_ia = $existing ? ($existing . "\n" . $newLog) : $newLog;
+
+        $historico->save();
+
+        return response()->json([
+            'should_reply' => true,
+            'reply' => $reply
         ]);
     }
 

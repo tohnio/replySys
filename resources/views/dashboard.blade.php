@@ -247,8 +247,8 @@
 
             <!-- Últimas Ligações IA -->
             <div class="glass-panel rounded-2xl shadow-lg flex flex-col h-full">
-                <div class="p-6 border-b border-white/10 flex justify-between items-center">
-                    <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                <div class="p-6 border-b border-white/10 flex flex-wrap justify-between items-center gap-4">
+                    <h3 class="text-lg font-bold text-white flex items-center gap-2 flex-wrap">
                         Atividade n8n / NVoIP 
                         <span class="flex h-3 w-3 relative ml-2">
                           <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
@@ -261,19 +261,19 @@
                     @if($ultimasLigacoes->count() > 0)
                         <div class="space-y-4">
                             @foreach($ultimasLigacoes as $ligacao)
-                                <div class="flex items-center justify-between p-3 rounded-lg hover:bg-slate-800/50 transition-colors border border-transparent hover:border-white/5">
-                                    <div class="flex items-center gap-4">
-                                        <div class="h-10 w-10 rounded-full {{ $ligacao->status_ligacao == 'atendida' ? 'bg-emerald-900/40 text-emerald-400 border-emerald-700/50' : ($ligacao->status_ligacao == 'pendente' ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-amber-900/40 text-amber-400 border-amber-700/50') }} flex items-center justify-center border animate-pulse">
+                                <div class="flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-lg hover:bg-slate-800/50 transition-colors border border-transparent hover:border-white/5 gap-3">
+                                    <div class="flex items-center gap-4 min-w-0">
+                                        <div class="h-10 w-10 rounded-full {{ $ligacao->status_ligacao == 'atendida' || $ligacao->status_ligacao == 'whatsapp' ? 'bg-emerald-900/40 text-emerald-400 border-emerald-700/50' : ($ligacao->status_ligacao == 'pendente' || $ligacao->status_ligacao == 'chamada por whatsapp pendente' ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-amber-900/40 text-amber-400 border-amber-700/50') }} flex items-center justify-center border animate-pulse shrink-0">
                                             <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z"></path></svg>
                                         </div>
-                                        <div>
-                                            <p class="font-medium text-slate-200">OS #{{ $ligacao->ordem_servico_id }} - {{ $ligacao->ordemServico->cliente->nome ?? 'Cliente' }}</p>
+                                        <div class="min-w-0">
+                                            <p class="font-medium text-slate-200 truncate">OS #{{ $ligacao->ordem_servico_id }} - {{ $ligacao->ordemServico->cliente->nome ?? 'Cliente' }}</p>
                                             <p class="text-xs text-slate-400">{{ $ligacao->created_at->diffForHumans() }}</p>
                                         </div>
                                     </div>
-                                    <div class="text-right">
+                                    <div class="text-left sm:text-right shrink-0">
                                         @if($ligacao->status_ligacao == 'pendente')
-                                            <div class="flex flex-col items-end gap-1">
+                                            <div class="flex flex-col items-start sm:items-end gap-1">
                                                 <span class="text-sm font-medium text-slate-400">Pendente</span>
                                                 @if($ligacao->ordemServico && $ligacao->ordemServico->status === 'REPARADO')
                                                     <button onclick="redialCall({{ $ligacao->ordem_servico_id }})" class="px-2 py-0.5 mt-1 rounded text-[10px] font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition-all shadow-sm flex items-center gap-0.5 cursor-pointer" title="Ligar novamente">
@@ -282,6 +282,12 @@
                                                     </button>
                                                 @endif
                                             </div>
+                                        @elseif($ligacao->status_ligacao == 'chamada por whatsapp pendente')
+                                            <span class="text-sm font-medium text-indigo-400">WhatsApp Pendente</span>
+                                        @elseif($ligacao->status_ligacao == 'erro ao executar chamada')
+                                            <span class="text-sm font-medium text-red-400">Erro WhatsApp</span>
+                                        @elseif($ligacao->status_ligacao == 'whatsapp')
+                                            <span class="text-sm font-medium text-emerald-400">Notificado (WhatsApp)</span>
                                         @elseif($ligacao->status_ligacao == 'atendida')
                                             <span class="text-sm font-medium text-emerald-400">Atendida</span>
                                             @if($ligacao->duracao)

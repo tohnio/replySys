@@ -146,7 +146,7 @@
       "parameters": {
         "httpMethod": "POST",
         "path": "evolution-whatsapp-response-webhook",
-        "responseMode": "lastNode",
+        "responseMode": "onReceived",
         "options": {}
       },
       "id": "4756224b-b74d-4a42-a070-460676eb36df",
@@ -161,7 +161,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const body = $json.body || $json;\n\n// Se a mensagem foi enviada pela própria API (bot), ignora para evitar loop\nif (body.data?.key?.fromMe === true) {\n  return [];\n}\n\n// Extrai o texto da mensagem de várias localizações possíveis\nconst text = body.data?.message?.conversation || \n             body.data?.message?.extendedTextMessage?.text || \n             body.data?.message?.imageMessage?.caption || \n             body.data?.message?.videoMessage?.caption || \n             \"\";\n\nconst remoteJid = body.data?.key?.remoteJid || \"\";\n// O remoteJid é no formato \"5551999999999@s.whatsapp.net\", extraímos apenas os números\nconst phone = remoteJid.split('@')[0];\n\nif (!phone) {\n  return [];\n}\n\nreturn {\n  user_input: text,\n  cliente_telefone: phone\n};"
+        "jsCode": "const body = $json.body || $json;\n\n// Garante que processamos apenas mensagens novas recebidas (MESSAGES_UPSERT para v2, messages.upsert para v1)\nconst eventName = (body.event || '').toUpperCase();\nif (eventName !== 'MESSAGES_UPSERT' && eventName !== 'MESSAGES.UPSERT') {\n  return [];\n}\n\nif (body.data?.key?.fromMe === true) {\n  return [];\n}\n\n// Extrai o texto da mensagem de várias localizações possíveis\nconst text = body.data?.message?.conversation || \n             body.data?.message?.extendedTextMessage?.text || \n             body.data?.message?.imageMessage?.caption || \n             body.data?.message?.videoMessage?.caption || \n             \"\";\n\nconst remoteJid = body.data?.key?.remoteJid || \"\";\n// O remoteJid é no formato \"5551999999999@s.whatsapp.net\", extraímos apenas os números\nconst phone = remoteJid.split('@')[0];\n\nif (!phone) {\n  return [];\n}\n\nreturn {\n  user_input: text,\n  cliente_telefone: phone,\n  message_id: body.data?.key?.id || \"\"\n};"
       },
       "id": "db003c80-6f78-47a4-af92-a4b8b8d5d6e0",
       "name": "7. Code: Processa Entrada WhatsApp",
@@ -174,7 +174,11 @@
     },
     {
       "parameters": {
-        "url": "={{ \"http://nginx/api/webhook/n8n/client-details/\" + $node[\"7. Code: Processa Entrada WhatsApp\"].json.cliente_telefone }}",
+        "method": "POST",
+        "url": "http://nginx/api/webhook/n8n/whatsapp-reply",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"phone\": \"{{ $json.cliente_telefone }}\",\n  \"text\": \"{{ $json.user_input }}\",\n  \"message_id\": \"{{ $json.message_id }}\"\n}",
         "options": {}
       },
       "id": "29fafad6-9734-4677-9bf7-1294a040c9c9",
@@ -188,29 +192,35 @@
     },
     {
       "parameters": {
-        "text": "={{ $node[\"7. Code: Processa Entrada WhatsApp\"].json.user_input }}",
-        "options": {
-          "systemMessage": "=Você é a assistente virtual inteligente da Sapataria Souza, uma sapataria localizada no bairro Cavalhada de Porto Alegre.\nSua missão é ser extremamente educada, objetiva e falar em português brasileiro natural (pt-BR).\n\nDADOS DA CONVERSA:\n- Cliente: {{ $json.cliente_nome }}\n- Aparelho/Sapato: {{ $json.item_reparado }}\n- Valor a pagar: {{ $json.valor_restante }} reais\n\nDADOS DA LOJA (Se o cliente perguntar):\n- Endereço: Otto Niemeyer, 3210 - Cavalhada, Porto Alegre - RS.\n- Horário de Funcionamento: Segunda a Sexta-feira, das 09:00 às 18:00 (Não abrimos aos sábados e domingos).\n\nDIRETRIZES DE COMPORTAMENTO:\n1. Se o cliente perguntar sobre a localização ou horário, responda de forma clara usando estritamente os DADOS DA LOJA informados acima.\n2. Se o cliente perguntar sobre preço ou valor a pagar, diga o valor restante de forma clara.\n3. Mantenha as respostas curtas e naturais, adequadas para uma conversa de chat de WhatsApp (evite textos longos ou listas complexas)."
-        }
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "check-should-reply",
+              "leftValue": "={{ $json.should_reply }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
       },
       "id": "2398b610-f169-45ab-8f19-092344177aaa",
-      "name": "9. AI Agent: Processa Diálogo",
-      "type": "@n8n/n8n-nodes-langchain.agent",
-      "typeVersion": 1,
+      "name": "If: Devo Responder?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
       "position": [
         -544,
         368
-      ]
-    },
-    {
-      "parameters": {},
-      "id": "6b8a812d-e028-45ad-863f-db6994286af5",
-      "name": "11. Memory: Window Buffer",
-      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
-      "typeVersion": 1,
-      "position": [
-        -432,
-        576
       ]
     },
     {
@@ -228,7 +238,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"number\": \"{{ $node[\\\"7. Code: Processa Entrada WhatsApp\\\"].json.cliente_telefone }}\",\n  \"text\": \"{{ $json.output }}\"\n}"
+        "jsonBody": "={{ { number: $node['7. Code: Processa Entrada WhatsApp'].json.cliente_telefone, text: $json.reply } }}"
       },
       "id": "41dcf3a3-4286-45a3-b30e-5fd7eacd7096",
       "name": "12. Evolution API: Envia Resposta WhatsApp",
@@ -238,26 +248,6 @@
         -192,
         368
       ]
-    },
-    {
-      "parameters": {
-        "model": "openai/gpt-oss-20b:free",
-        "options": {}
-      },
-      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
-      "typeVersion": 1,
-      "position": [
-        -544,
-        576
-      ],
-      "id": "bb50dbb4-efa6-4708-a367-ee529ca7ca74",
-      "name": "OpenRouter Chat Model",
-      "credentials": {
-        "openRouterApi": {
-          "id": "nRqXN2Sq2yyc8f99",
-          "name": "OpenRouter account"
-        }
-      }
     }
   ],
   "pinData": {},
@@ -339,41 +329,19 @@
       "main": [
         [
           {
-            "node": "9. AI Agent: Processa Diálogo",
+            "node": "If: Devo Responder?",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "11. Memory: Window Buffer": {
-      "ai_memory": [
-        [
-          {
-            "node": "9. AI Agent: Processa Diálogo",
-            "type": "ai_memory",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "9. AI Agent: Processa Diálogo": {
+    "If: Devo Responder?": {
       "main": [
         [
           {
             "node": "12. Evolution API: Envia Resposta WhatsApp",
             "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "OpenRouter Chat Model": {
-      "ai_languageModel": [
-        [
-          {
-            "node": "9. AI Agent: Processa Diálogo",
-            "type": "ai_languageModel",
             "index": 0
           }
         ]

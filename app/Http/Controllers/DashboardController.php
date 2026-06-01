@@ -21,8 +21,8 @@ class DashboardController extends Controller
 
         $totalClientes = Cliente::count();
 
-        $ligacoesPendentes = HistoricoLigacao::where('status_ligacao', 'pendente')->count();
-        $ligacoesAtendidas = HistoricoLigacao::where('status_ligacao', 'atendida')->count();
+        $ligacoesPendentes = HistoricoLigacao::whereIn('status_ligacao', ['pendente', 'chamada por whatsapp pendente'])->count();
+        $ligacoesAtendidas = HistoricoLigacao::whereIn('status_ligacao', ['atendida', 'whatsapp'])->count();
         $ligacoesCaixaPostal = HistoricoLigacao::where('status_ligacao', 'caixa_postal')->count();
 
         $ultimasOs = OrdemServico::with('cliente')->orderBy('created_at', 'desc')->take(6)->get();

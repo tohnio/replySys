@@ -224,22 +224,13 @@ class N8nTest extends TestCase
             'defeito_relatado' => ''
         ]);
 
-        // Create 4 previous call attempts
-        for ($i = 0; $i < 4; $i++) {
-            HistoricoLigacao::create([
-                'ordem_servico_id' => $os->id,
-                'external_call_id' => "old-call-$i",
-                'status_ligacao' => 'caixa_postal',
-                'data_ligacao' => now()->subHours(6 - $i)
-            ]);
-        }
-
-        // Create the 5th pending one that webhook will update
+        // Cria o único registro de histórico com tentativas = 4 e status pendente
         $historico = HistoricoLigacao::create([
             'ordem_servico_id' => $os->id,
             'external_call_id' => 'call-uuid-123',
             'status_ligacao' => 'pendente',
-            'data_ligacao' => now()
+            'data_ligacao' => now(),
+            'tentativas' => 4
         ]);
 
         $payload = [
@@ -253,7 +244,7 @@ class N8nTest extends TestCase
 
         $response->assertStatus(200);
 
-        // Total attempts is now 5. No more retries should be pushed.
+        // Total attempts is 4. No more retries should be pushed.
         Queue::assertNotPushed(CallCustomerJob::class);
         $this->assertNull($historico->fresh()->proxima_tentativa);
     }
@@ -365,5 +356,279 @@ class N8nTest extends TestCase
     {
         $response = $this->getJson('/api/webhook/n8n/client-details/5599999999999');
         $response->assertStatus(404);
+    }
+
+    public function test_whatsapp_notification_job_triggers_fallback_on_immediate_failure(): void
+    {
+        Queue::fake();
+        Http::fake([
+            'n8n.test-url.com/whatsapp/*' => Http::response(['error' => 'Unauthorized'], 401)
+        ]);
+
+        config([
+            'services.n8n.whatsapp_webhook_url' => 'https://n8n.test-url.com/whatsapp/123',
+        ]);
+
+        $cliente = Cliente::create(['nome' => 'Luiza', 'telefone' => '11911112222']);
+        $os = OrdemServico::create([
+            'cliente_id' => $cliente->id,
+            'descricao_item' => 'Sandália',
+            'status' => 'REPARADO',
+            'valor_orcamento' => 90.00,
+            'status_pagamento' => 'pendente',
+            'defeito_relatado' => ''
+        ]);
+
+        $n8nService = new \App\Services\N8nService();
+        $job = new \App\Jobs\WhatsAppNotificationJob($os);
+        $job->handle($n8nService);
+
+        // Assert WhatsApp call was recorded as erro ao executar chamada
+        $this->assertDatabaseHas('historico_ligacaos', [
+            'ordem_servico_id' => $os->id,
+            'status_ligacao' => 'erro ao executar chamada',
+            'tentativas' => 1
+        ]);
+
+        // Assert CallCustomerJob was dispatched as a fallback
+        Queue::assertPushed(\App\Jobs\CallCustomerJob::class, function ($job) use ($os) {
+            return $job->os->id === $os->id;
+        });
+    }
+
+    public function test_n8n_whatsapp_flow_sends_correct_payload_and_records_status(): void
+    {
+        Http::fake([
+            'n8n.test-url.com/whatsapp/*' => Http::response(['status' => 'success'], 200)
+        ]);
+
+        config([
+            'services.n8n.whatsapp_webhook_url' => 'https://n8n.test-url.com/whatsapp/123',
+        ]);
+
+        $cliente = Cliente::create(['nome' => 'Luiza', 'telefone' => '11911112222']);
+        $os = OrdemServico::create([
+            'cliente_id' => $cliente->id,
+            'descricao_item' => 'Sandália',
+            'status' => 'REPARADO',
+            'valor_orcamento' => 90.00,
+            'status_pagamento' => 'pendente',
+            'defeito_relatado' => ''
+        ]);
+
+        $n8nService = new \App\Services\N8nService();
+        $result = $n8nService->sendWhatsApp($os);
+
+        $this->assertTrue($result);
+
+        Http::assertSent(function ($request) use ($os) {
+            return $request->url() === 'https://n8n.test-url.com/whatsapp/123' &&
+                   $request['ordem_servico_id'] === $os->id &&
+                   $request['cliente']['nome'] === 'Luiza' &&
+                   $request['cliente']['telefone'] === '+5511911112222';
+        });
+
+        $this->assertDatabaseHas('historico_ligacaos', [
+            'ordem_servico_id' => $os->id,
+            'status_ligacao' => 'chamada por whatsapp pendente',
+            'tentativas' => 1
+        ]);
+    }
+
+    public function test_whatsapp_reply_endpoint_returns_should_reply_false_when_phone_not_found(): void
+    {
+        $response = $this->postJson('/api/webhook/n8n/whatsapp-reply', [
+            'phone' => '11999999999',
+            'text' => 'Olá',
+            'message_id' => 'msg-1'
+        ]);
+
+        $response->assertStatus(200)
+                 ->assertJson([
+                     'should_reply' => false
+                 ]);
+    }
+
+    public function test_whatsapp_reply_endpoint_returns_correct_responses(): void
+    {
+        $cliente = Cliente::create(['nome' => 'Luiza', 'telefone' => '11911112222']);
+        $os = OrdemServico::create([
+            'cliente_id' => $cliente->id,
+            'descricao_item' => 'Sandália',
+            'status' => 'REPARADO',
+            'valor_orcamento' => 90.00,
+            'status_pagamento' => 'pendente',
+            'defeito_relatado' => ''
+        ]);
+
+        $historico = HistoricoLigacao::create([
+            'ordem_servico_id' => $os->id,
+            'status_ligacao' => 'chamada por whatsapp pendente',
+            'tentativas' => 1
+        ]);
+
+        // Test Horário
+        $response = $this->postJson('/api/webhook/n8n/whatsapp-reply', [
+            'phone' => '5511911112222',
+            'text' => 'Qual o horario de atendimento de vcs?',
+            'message_id' => 'msg-horario'
+        ]);
+
+        $response->assertStatus(200)
+                 ->assertJson([
+                     'should_reply' => true,
+                     'reply' => "Nosso horário de atendimento é de segunda a sexta-feira, das 09:00 às 18:00 (não abrimos aos sábados e domingos)."
+                 ]);
+
+        // Verify reply count incremented and message id saved
+        $historico = $historico->fresh();
+        $this->assertEquals(1, $historico->whatsapp_reply_count);
+        $this->assertEquals('msg-horario', $historico->last_whatsapp_message_id);
+
+        // Test Endereço
+        $response2 = $this->postJson('/api/webhook/n8n/whatsapp-reply', [
+            'phone' => '5511911112222',
+            'text' => 'qual o endereço da loja?',
+            'message_id' => 'msg-endereco'
+        ]);
+
+        $response2->assertStatus(200)
+                  ->assertJson([
+                      'should_reply' => true,
+                      'reply' => "Nosso endereço é Avenida Otto Niemeyer, 3210 - Cavalhada, Porto Alegre - RS."
+                  ]);
+
+        $historico = $historico->fresh();
+        $this->assertEquals(2, $historico->whatsapp_reply_count);
+        $this->assertEquals('msg-endereco', $historico->last_whatsapp_message_id);
+    }
+
+    public function test_whatsapp_reply_endpoint_limits_responses_to_two(): void
+    {
+        $cliente = Cliente::create(['nome' => 'Luiza', 'telefone' => '11911112222']);
+        $os = OrdemServico::create([
+            'cliente_id' => $cliente->id,
+            'descricao_item' => 'Sandália',
+            'status' => 'REPARADO',
+            'valor_orcamento' => 90.00,
+            'status_pagamento' => 'pendente',
+            'defeito_relatado' => ''
+        ]);
+
+        HistoricoLigacao::create([
+            'ordem_servico_id' => $os->id,
+            'status_ligacao' => 'chamada por whatsapp pendente',
+            'tentativas' => 1,
+            'whatsapp_reply_count' => 2 // already replied twice
+        ]);
+
+        $response = $this->postJson('/api/webhook/n8n/whatsapp-reply', [
+            'phone' => '5511911112222',
+            'text' => 'Qual o endereço?',
+            'message_id' => 'msg-3'
+        ]);
+
+        $response->assertStatus(200)
+                 ->assertJson([
+                     'should_reply' => false
+                 ]);
+    }
+
+    public function test_whatsapp_reply_endpoint_prevents_duplicate_message_processing(): void
+    {
+        $cliente = Cliente::create(['nome' => 'Luiza', 'telefone' => '11911112222']);
+        $os = OrdemServico::create([
+            'cliente_id' => $cliente->id,
+            'descricao_item' => 'Sandália',
+            'status' => 'REPARADO',
+            'valor_orcamento' => 90.00,
+            'status_pagamento' => 'pendente',
+            'defeito_relatado' => ''
+        ]);
+
+        HistoricoLigacao::create([
+            'ordem_servico_id' => $os->id,
+            'status_ligacao' => 'chamada por whatsapp pendente',
+            'tentativas' => 1,
+            'whatsapp_reply_count' => 0,
+            'last_whatsapp_message_id' => 'msg-dup-123'
+        ]);
+
+        $response = $this->postJson('/api/webhook/n8n/whatsapp-reply', [
+            'phone' => '5511911112222',
+            'text' => 'qual o horário de atendimento?',
+            'message_id' => 'msg-dup-123'
+        ]);
+
+        $response->assertStatus(200)
+                 ->assertJson([
+                     'should_reply' => false
+                 ]);
+    }
+
+    public function test_whatsapp_reply_endpoint_combines_responses(): void
+    {
+        $cliente = Cliente::create(['nome' => 'Luiza', 'telefone' => '11911112222']);
+        $os = OrdemServico::create([
+            'cliente_id' => $cliente->id,
+            'descricao_item' => 'Sandália',
+            'status' => 'REPARADO',
+            'valor_orcamento' => 90.00,
+            'status_pagamento' => 'pendente',
+            'defeito_relatado' => ''
+        ]);
+
+        $historico = HistoricoLigacao::create([
+            'ordem_servico_id' => $os->id,
+            'status_ligacao' => 'chamada por whatsapp pendente',
+            'tentativas' => 1
+        ]);
+
+        $response = $this->postJson('/api/webhook/n8n/whatsapp-reply', [
+            'phone' => '5511911112222',
+            'text' => 'Certo, vou passar amanhã. fecha ao meio dia? qual o endereço da loja?',
+            'message_id' => 'msg-combined'
+        ]);
+
+        $expectedReply = "Nosso horário de atendimento é de segunda a sexta-feira, das 09:00 às 18:00 (não abrimos aos sábados e domingos).\nNosso endereço é Avenida Otto Niemeyer, 3210 - Cavalhada, Porto Alegre - RS.";
+
+        $response->assertStatus(200)
+                 ->assertJson([
+                     'should_reply' => true,
+                     'reply' => $expectedReply
+                 ]);
+
+        $this->assertEquals(1, $historico->fresh()->whatsapp_reply_count);
+    }
+
+    public function test_whatsapp_reply_endpoint_returns_default_for_unknown(): void
+    {
+        $cliente = Cliente::create(['nome' => 'Luiza', 'telefone' => '11911112222']);
+        $os = OrdemServico::create([
+            'cliente_id' => $cliente->id,
+            'descricao_item' => 'Sandália',
+            'status' => 'REPARADO',
+            'valor_orcamento' => 90.00,
+            'status_pagamento' => 'pendente',
+            'defeito_relatado' => ''
+        ]);
+
+        HistoricoLigacao::create([
+            'ordem_servico_id' => $os->id,
+            'status_ligacao' => 'chamada por whatsapp pendente',
+            'tentativas' => 1
+        ]);
+
+        $response = $this->postJson('/api/webhook/n8n/whatsapp-reply', [
+            'phone' => '5511911112222',
+            'text' => 'Qual o valor total para consertar?',
+            'message_id' => 'msg-unknown'
+        ]);
+
+        $response->assertStatus(200)
+                 ->assertJson([
+                     'should_reply' => true,
+                     'reply' => 'Desculpe, não sei dizer no momento.'
+                 ]);
     }
 }
