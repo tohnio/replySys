@@ -35,6 +35,15 @@ if [ $? -eq 0 ]; then
 
     # Executa comandos pós-deploy via SSH remoto usando sshpass
     sshpass -p "$PASSWORD" ssh -o StrictHostKeyChecking=no "$DEST_USER@$DEST_IP" "
+        echo '-> Verificando variáveis de ambiente críticas no .env...' && \
+        if [ ! -f "$DEST_DIR/.env" ]; then
+            echo "❌ ERRO CRÍTICO: .env não encontrado em $DEST_DIR!"
+        else
+            grep -q '^N8N_WHATSAPP_WEBHOOK_URL=' "$DEST_DIR/.env" || echo "⚠️ AVISO: N8N_WHATSAPP_WEBHOOK_URL não está configurada no .env de produção!"
+            grep -q '^N8N_WEBHOOK_URL=' "$DEST_DIR/.env" || echo "⚠️ AVISO: N8N_WEBHOOK_URL não está configurada no .env de produção!"
+            grep -q '^QUEUE_CONNECTION=' "$DEST_DIR/.env" || echo "⚠️ AVISO: QUEUE_CONNECTION não está configurada no .env de produção!"
+        fi && \
+        
         echo '-> Limpando arquivos de cache locais temporários no servidor...' && \
         rm -f $DEST_DIR/bootstrap/cache/*.php && \
         
@@ -54,13 +63,9 @@ if [ $? -eq 0 ]; then
         docker compose exec -T app php artisan route:cache && \
         docker compose exec -T app php artisan view:cache && \
         
-        echo '-> Reiniciando fila de jobs (queue:work/queue:listen)...' && \
-        # Caso use 'queue:work' com Supervisor ou daemon no container (Recomendado):
+        echo '-> Reiniciando container de fila de jobs (queue) e sinalizando restart...' && \
+        docker compose restart queue && \
         docker compose exec -T app php artisan queue:restart && \
-        
-        # Caso use 'queue:listen' manual em background no container, descomente abaixo:
-        # docker compose exec -T app pkill -f 'artisan queue:listen' || true
-        # docker compose exec -d app php artisan queue:listen --queue=default
         
         echo '-> Desativando modo de manutenção (Online)...' && \
         docker compose exec -T app php artisan up
