@@ -10,3 +10,5 @@ docker exec -it replysys_app php artisan config:clear
 docker exec -it replysys_app php artisan queue:restart
 
 node scripts/ask-openrouter-webhook.js --prod "O webhook esta funcionando?"
+python agent.py dev   
+python make_call.py --to 51985408560

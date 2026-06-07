@@ -25,6 +25,10 @@ sshpass -p "$PASSWORD" rsync -avz --no-perms --no-owner --no-group --delete \
     --exclude='/bootstrap/cache/*.php' \
     --exclude='/.env' \
     --exclude='/sync.ps1' \
+    --exclude='/.venv' \
+    --exclude='/venv' \
+    --exclude='**/__pycache__' \
+    --exclude='**/*.pyc' \
     "$SOURCE_DIR" "$DEST_USER@$DEST_IP:$DEST_DIR"
 
 if [ $? -eq 0 ]; then
@@ -42,6 +46,14 @@ if [ $? -eq 0 ]; then
             grep -q '^N8N_WHATSAPP_WEBHOOK_URL=' "$DEST_DIR/.env" || echo "⚠️ AVISO: N8N_WHATSAPP_WEBHOOK_URL não está configurada no .env de produção!"
             grep -q '^N8N_WEBHOOK_URL=' "$DEST_DIR/.env" || echo "⚠️ AVISO: N8N_WEBHOOK_URL não está configurada no .env de produção!"
             grep -q '^QUEUE_CONNECTION=' "$DEST_DIR/.env" || echo "⚠️ AVISO: QUEUE_CONNECTION não está configurada no .env de produção!"
+            grep -q '^GOOGLE_API_KEY=' "$DEST_DIR/.env" || echo "⚠️ AVISO: GOOGLE_API_KEY não está configurada para o Gemini Live!"
+            grep -q '^LIVEKIT_URL=' "$DEST_DIR/.env" || echo "⚠️ AVISO: LIVEKIT_URL não está configurada para o LiveKit!"
+            grep -q '^LIVEKIT_API_KEY=' "$DEST_DIR/.env" || echo "⚠️ AVISO: LIVEKIT_API_KEY não está configurada!"
+            grep -q '^LIVEKIT_API_SECRET=' "$DEST_DIR/.env" || echo "⚠️ AVISO: LIVEKIT_API_SECRET não está configurada!"
+            grep -q '^NVOIP_SIP_ADDRESS=' "$DEST_DIR/.env" || echo "⚠️ AVISO: NVOIP_SIP_ADDRESS não está configurada!"
+            grep -q '^NVOIP_SIP_USERNAME=' "$DEST_DIR/.env" || echo "⚠️ AVISO: NVOIP_SIP_USERNAME não está configurada!"
+            grep -q '^NVOIP_SIP_PASSWORD=' "$DEST_DIR/.env" || echo "⚠️ AVISO: NVOIP_SIP_PASSWORD não está configurada!"
+            grep -q '^NVOIP_SIP_CALLER_ID=' "$DEST_DIR/.env" || echo "⚠️ AVISO: NVOIP_SIP_CALLER_ID não está configurada!"
         fi && \
         
         echo '-> Limpando arquivos de cache locais temporários no servidor...' && \
@@ -51,6 +63,9 @@ if [ $? -eq 0 ]; then
         
         echo '-> Ativando modo de manutenção...' && \
         docker compose exec -T app php artisan down && \
+        
+        echo '-> Reconstruindo e atualizando os containers (incluindo agent de IA)...' && \
+        docker compose up -d --build && \
         
         echo '-> Instalando dependências do Composer...' && \
         docker compose exec -T app composer install --no-dev --optimize-autoloader --no-interaction && \
@@ -64,6 +79,7 @@ if [ $? -eq 0 ]; then
         docker compose exec -T app php artisan view:cache && \
         
         echo '-> Reiniciando container de fila de jobs (queue) e sinalizando restart...' && \
+        docker compose restart app && \
         docker compose restart queue && \
         docker compose exec -T app php artisan queue:restart && \
         

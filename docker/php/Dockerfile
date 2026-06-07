@@ -23,6 +23,12 @@ RUN apt-get clean && rm -rf /var/lib/apt/lists/*
 RUN curl -sL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y nodejs
 
+# Install Python3, pip and virtualenv
+RUN apt-get update && apt-get install -y python3-pip python3-venv
+
+# Install Python packages globally (using --break-system-packages for Debian Bookworm)
+RUN pip3 install --break-system-packages livekit-api python-dotenv
+
 # Install extensions
 RUN docker-php-ext-install pdo_mysql mbstring zip exif pcntl
 RUN docker-php-ext-configure gd --with-freetype --with-jpeg

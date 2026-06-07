@@ -1,4 +1,4 @@
-version: '3.8'
+
 
 services:
   app:
@@ -152,6 +152,53 @@ services:
       - POSTGRES_DB=evolution
     volumes:
       - evolution_db_data:/var/lib/postgresql/data
+    networks:
+      - replysys-network
+
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: ${PROJECT_NAME}_livekit
+    restart: unless-stopped
+    command: --config /etc/livekit.yaml
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+    networks:
+      - replysys-network
+
+  livekit-sip:
+    image: livekit/sip:latest
+    container_name: ${PROJECT_NAME}_livekit_sip
+    restart: unless-stopped
+    command: --config /etc/livekit-sip.yaml
+    volumes:
+      - ./livekit-sip.yaml:/etc/livekit-sip.yaml
+    ports:
+      - "5060:5060"
+      - "5060:5060/udp"
+      - "10000-10050:10000-10050/udp"
+    networks:
+      - replysys-network
+    depends_on:
+      - livekit
+      - redis
+
+  agent:
+    build:
+      context: ../
+      dockerfile: docker/agent/Dockerfile
+    container_name: ${PROJECT_NAME}_agent
+    restart: unless-stopped
+    depends_on:
+      - livekit
+    env_file:
+      - ../.env
+    environment:
+      - LIVEKIT_URL=ws://livekit:7880
+      - LARAVEL_WEBHOOK_URL=http://nginx/api/webhook/n8n
     networks:
       - replysys-network
 
